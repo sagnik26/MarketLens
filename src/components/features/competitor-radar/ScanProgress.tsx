@@ -6,11 +6,19 @@ interface ScanProgressProps {
   runId: string;
   status: string;
   events: string[];
+  competitorName?: string;
   onCancel: () => void;
   onComplete: () => void;
 }
 
-export function ScanProgress({ runId, status, events, onCancel, onComplete }: ScanProgressProps) {
+export function ScanProgress({
+  runId,
+  status,
+  events,
+  competitorName,
+  onCancel,
+  onComplete,
+}: ScanProgressProps) {
   const isRunning = status === "running";
 
   return (
@@ -32,7 +40,7 @@ export function ScanProgress({ runId, status, events, onCancel, onComplete }: Sc
             aria-hidden
           />
           <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            Scan in progress
+            {competitorName ? `Scan: ${competitorName}` : "Scan in progress"}
           </h2>
         </div>
         {isRunning ? (
@@ -57,9 +65,9 @@ export function ScanProgress({ runId, status, events, onCancel, onComplete }: Sc
         {isRunning ? "Running…" : "Completed"}
       </p>
       {events.length > 0 && (
-        <ul className="mt-4 max-h-36 space-y-1 overflow-y-auto rounded-lg border border-neutral-200 bg-neutral-50/50 py-2 pl-4 pr-2 text-xs text-zinc-600 dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-zinc-400">
+        <ul className="mt-4 max-h-36 space-y-1 overflow-y-auto rounded-lg border border-neutral-200 bg-neutral-50/50 py-3 pl-6 pr-3 text-xs text-zinc-600 dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-zinc-400">
           {events.map((evt, i) => (
-            <li key={i} className="list-disc">
+            <li key={i} className="list-disc pl-1">
               {evt}
             </li>
           ))}

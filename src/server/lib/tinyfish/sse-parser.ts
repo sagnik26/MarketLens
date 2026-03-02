@@ -1,12 +1,84 @@
 /** Parses TinyFish run-sse ReadableStream into TinyFishSSEResult (events, resultJson, status). */
 
-export interface TinyFishSSEResult {
-  success: boolean;
-  resultJson: unknown;
-  status: string;
-  rawEvents: unknown[];
+import type { TinyFishSSEEvent, TinyFishSSEResult } from "./tinyfish.types";
+
+export async function parseSSEStream(response: Response): Promise<TinyFishSSEResult> {
+  if (!response.body) {
+    return {
+      success: false,
+      resultJson: null,
+      status: "FAILED",
+      error: "No response body received from TinyFish",
+      rawEvents: [],
+    };
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  let buffer = "";
+  const events: TinyFishSSEEvent[] = [];
+
+  let finalResult: unknown = null;
+  let failed = false;
+  let failureReason: string | null = null;
+
+  try {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+
+      for (const part of parts) {
+        const trimmed = part.trim();
+        if (!trimmed.startsWith("data:")) continue;
+
+        const jsonString = trimmed.replace(/^data:\s*/, "").trim();
+        if (!jsonString) continue;
+
+        try {
+          const event = JSON.parse(jsonString) as TinyFishSSEEvent;
+          events.push(event);
+
+          if (
+            event.type === "ERROR" ||
+            event.status === "FAILED" ||
+            event.status === "CANCELLED" ||
+            (event.type === "COMPLETE" && event.status !== "COMPLETED")
+          ) {
+            failed = true;
+            failureReason =
+              event.error ??
+              event.message ??
+              event.help_message ??
+              "TinyFish reported failure";
+          }
+
+          if (event.type === "COMPLETE" && event.resultJson !== undefined && event.resultJson !== null) {
+            finalResult = event.resultJson;
+          }
+        } catch {
+          // Swallow malformed chunks; they should not crash the stream parser
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const hasResult = finalResult !== null;
+
+  return {
+    success: hasResult && !failed,
+    status: failed ? "FAILED" : hasResult ? "COMPLETED" : "IN_PROGRESS",
+    resultJson: finalResult,
+    error: failureReason,
+    rawEvents: events,
+  };
 }
 
-export async function parseSSEStream(_response: Response): Promise<TinyFishSSEResult> {
-  return { success: false, resultJson: null, status: "FAILED", rawEvents: [] };
-}

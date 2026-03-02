@@ -2,43 +2,72 @@
 
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { CompetitorCard } from "./CompetitorCard";
 import { ScanProgress } from "./ScanProgress";
-import { getCompetitorsAction, addCompetitorsAction } from "@/actions/competitor.actions";
+import {
+  getCompetitorsAction,
+  addCompetitorsAction,
+  deleteCompetitorAction,
+  getCompetitorChannelSummaryAction,
+  type CompetitorChannelSummary,
+} from "@/actions/competitor.actions";
 import { useCompetitorRadarState } from "./useCompetitorRadarState";
+import { useScanProgressStore } from "@/stores/scan-progress.store";
 import type { Competitor } from "./competitor-radar.types";
+import { SourceChannel, SOURCE_CHANNEL_LABELS, type SourceChannel as SourceChannelType } from "@/constants";
 
 export function CompetitorManageView() {
   const {
     competitors,
     setCompetitors,
-    activeScanRunId,
-    setActiveScanRunId,
-    scanStatus,
-    setScanStatus,
-    scanEvents,
-    setScanEvents,
     loading,
     setLoading,
     error,
     setError,
   } = useCompetitorRadarState();
 
+  const scans = useScanProgressStore((s) => s.scans);
+  const runningScans = scans.filter((sc) => sc.status === "running");
+  const addScan = useScanProgressStore((s) => s.addScan);
+  const updateScanEvents = useScanProgressStore((s) => s.updateScanEvents);
+  const completeScan = useScanProgressStore((s) => s.completeScan);
+  const removeScan = useScanProgressStore((s) => s.removeScan);
+  const getScan = useScanProgressStore((s) => s.getScan);
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [addModalOpen, setAddModalOpen] = useState(false);
-  const [formRows, setFormRows] = useState<{ name: string; url: string }[]>([{ name: "", url: "" }]);
+  const [formRows, setFormRows] = useState<{ name: string; url: string; channels: SourceChannelType[] }[]>([
+    { name: "", url: "", channels: [SourceChannel.PRICING] },
+  ]);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [channelSummaries, setChannelSummaries] = useState<CompetitorChannelSummary[]>([]);
+  const [activeChannel, setActiveChannel] = useState<SourceChannelType | "all">("all");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const loadCompetitors = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const result = await getCompetitorsAction();
+    setDeleteError(null);
+    const [competitorsResult, summaryResult] = await Promise.all([
+      getCompetitorsAction(),
+      getCompetitorChannelSummaryAction(),
+    ]);
     setLoading(false);
-    if (result.success && result.data) setCompetitors(result.data as Competitor[]);
-    else setError(result.error ?? "Failed to load competitors");
-  }, [setCompetitors, setLoading, setError]);
+
+    if (competitorsResult.success && competitorsResult.data) {
+      const loaded = competitorsResult.data as Competitor[];
+      setCompetitors(loaded);
+    } else {
+      setError(competitorsResult.error ?? "Failed to load competitors");
+    }
+
+    if (summaryResult.success && summaryResult.data) {
+      setChannelSummaries(summaryResult.data);
+    }
+  }, [setCompetitors, setLoading, setError, setDeleteError]);
 
   useEffect(() => {
     loadCompetitors();
@@ -55,36 +84,58 @@ export function CompetitorManageView() {
 
   const handleRunScan = useCallback(
     (competitorId: string) => {
-      setActiveScanRunId(competitorId);
-      setScanStatus("running");
-      setScanEvents([]);
+      const competitor = competitors.find((c) => c.id === competitorId);
+      const name = competitor?.name ?? "Competitor";
+      const channelsForCompetitor =
+        competitor?.channels?.length ? competitor.channels : [SourceChannel.PRICING];
+
+      const scanId = addScan(competitorId, name);
+      updateScanEvents(scanId, ["Calling scan API…"]);
+
+      fetch("/api/v1/scan/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          competitorIds: [competitorId],
+          channels: channelsForCompetitor,
+        }),
+      })
+        .then((res) => res.json())
+        .then((data: { success?: boolean; error?: { message?: string } }) => {
+          if (!getScan(scanId)) return;
+          if (data.success) {
+            updateScanEvents(scanId, ["Scan finished", "Complete"]);
+            completeScan(scanId, "completed");
+          } else {
+            updateScanEvents(scanId, ["Error: " + (data.error?.message ?? "Scan failed")]);
+            completeScan(scanId, "failed");
+          }
+        })
+        .catch((err: Error) => {
+          if (!getScan(scanId)) return;
+          updateScanEvents(scanId, ["Error: " + String(err?.message ?? err)]);
+          completeScan(scanId, "failed");
+        });
     },
-    [setActiveScanRunId, setScanStatus, setScanEvents]
+    [competitors, addScan, updateScanEvents, completeScan, getScan]
   );
 
-  const handleScanComplete = useCallback(() => {
-    setActiveScanRunId(null);
-    setScanStatus(null);
-    loadCompetitors();
-  }, [setActiveScanRunId, setScanStatus, loadCompetitors]);
-
-  useEffect(() => {
-    if (!activeScanRunId || scanStatus !== "running") return;
-    const t = setTimeout(() => {
-      setScanEvents((e) => [...e, "Navigating to page", "Extracting data", "Complete"]);
-      setScanStatus("completed");
-    }, 2500);
-    return () => clearTimeout(t);
-  }, [activeScanRunId, scanStatus, setScanEvents, setScanStatus]);
+  const handleScanDone = useCallback(
+    (scanId: string) => {
+      removeScan(scanId);
+      loadCompetitors();
+    },
+    [removeScan, loadCompetitors]
+  );
 
   const openAddModal = useCallback(() => {
-    setFormRows([{ name: "", url: "" }]);
+    setFormRows([{ name: "", url: "", channels: [SourceChannel.PRICING] }]);
     setFormError(null);
     setAddModalOpen(true);
   }, []);
 
   const addFormRow = useCallback(() => {
-    setFormRows((prev) => [...prev, { name: "", url: "" }]);
+    setFormRows((prev) => [...prev, { name: "", url: "", channels: [SourceChannel.PRICING] }]);
   }, []);
 
   const updateFormRow = useCallback((index: number, field: "name" | "url", value: string) => {
@@ -95,30 +146,136 @@ export function CompetitorManageView() {
     });
   }, []);
 
+  const handleDelete = useCallback(
+    async (competitor: Competitor) => {
+      if (!window.confirm(`Remove "${competitor.name}" from your competitors?`)) return;
+      setDeleteError(null);
+      setDeletingId(competitor.id);
+      const result = await deleteCompetitorAction(competitor.id);
+      setDeletingId(null);
+      if (result.success) {
+        setCompetitors((prev) => prev.filter((c) => c.id !== competitor.id));
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(competitor.id);
+          return next;
+        });
+      } else {
+        setDeleteError(result.error ?? "Failed to delete competitor.");
+      }
+    },
+    [setCompetitors, setSelectedIds]
+  );
+
   const handleAddSubmit = useCallback(async () => {
-    const valid = formRows.filter((r) => r.name.trim() && r.url.trim());
-    if (valid.length === 0) {
+    const validRows = formRows.filter((r) => r.name.trim() && r.url.trim());
+    if (validRows.length === 0) {
       setFormError("Add at least one competitor with name and URL.");
       return;
     }
     setFormError(null);
     setSubmitLoading(true);
     const result = await addCompetitorsAction(
-      valid.map((r) => ({ name: r.name.trim(), url: r.url.trim() }))
+      validRows.map((r) => ({
+        name: r.name.trim(),
+        url: r.url.trim(),
+        channels: r.channels && r.channels.length ? r.channels : [SourceChannel.PRICING],
+      }))
     );
     setSubmitLoading(false);
     if (result.success && result.data) {
-      setCompetitors((prev) => [...prev, ...(result.data as Competitor[])]);
+      const created = result.data as Competitor[];
+      setCompetitors((prev) => [...prev, ...created]);
       setAddModalOpen(false);
     } else {
       setFormError(result.error ?? "Failed to add competitors.");
     }
   }, [formRows, setCompetitors]);
 
+  const sourceChannels: SourceChannelType[] = useMemo(
+    () => [
+      SourceChannel.PRICING,
+      SourceChannel.JOBS,
+      SourceChannel.PRODUCT_HUNT,
+      SourceChannel.FEATURES,
+    ],
+    []
+  );
+
+  const globalChannelTotals = useMemo(() => {
+    const totals: Record<SourceChannelType, number> = {
+      [SourceChannel.PRICING]: 0,
+      [SourceChannel.JOBS]: 0,
+      [SourceChannel.PRODUCT_HUNT]: 0,
+      [SourceChannel.FEATURES]: 0,
+    };
+
+    for (const summary of channelSummaries) {
+      for (const channel of summary.channels) {
+        totals[channel.channel] += channel.totalSignals;
+      }
+    }
+
+    return totals;
+  }, [channelSummaries]);
+
+  const filteredCompetitors = useMemo(() => {
+    if (activeChannel === "all") return competitors;
+    if (channelSummaries.length === 0) return competitors;
+
+    const allowedIds = new Set(
+      channelSummaries
+        .filter((summary) => summary.channels.some((c) => c.channel === activeChannel && c.totalSignals > 0))
+        .map((summary) => summary.competitorId)
+    );
+
+    return competitors.filter((c) => allowedIds.has(c.id));
+  }, [activeChannel, channelSummaries, competitors]);
+
   return (
     <div className="space-y-8">
-      {/* Add competitor */}
-      <section className="flex items-center justify-end">
+      {/* Toolbar: source channels + add competitor */}
+      <section className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            Source channels
+          </span>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveChannel("all")}
+              className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                activeChannel === "all"
+                  ? "border-violet-500 bg-violet-600 text-white shadow-sm"
+                  : "border-neutral-200 bg-white text-zinc-700 hover:border-violet-200 hover:text-violet-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-zinc-300 dark:hover:border-violet-700"
+              }`}
+            >
+              All
+            </button>
+            {sourceChannels.map((channel) => (
+              <button
+                key={channel}
+                type="button"
+                onClick={() => setActiveChannel(channel)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                  activeChannel === channel
+                    ? "border-violet-500 bg-violet-600 text-white shadow-sm"
+                    : "border-neutral-200 bg-white text-zinc-700 hover:border-violet-200 hover:text-violet-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-zinc-300 dark:hover:border-violet-700"
+                }`}
+              >
+                <span>{SOURCE_CHANNEL_LABELS[channel]}</span>
+                <span
+                  className={`ml-1 inline-flex h-5 min-w-[1.5rem] items-center justify-center rounded-full bg-black/5 px-1 text-[10px] font-semibold ${
+                    activeChannel === channel ? "bg-black/10 text-white" : "text-zinc-500 dark:text-zinc-400"
+                  }`}
+                >
+                  {globalChannelTotals[channel] ?? 0}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         <button
           type="button"
           onClick={openAddModal}
@@ -131,17 +288,20 @@ export function CompetitorManageView() {
         </button>
       </section>
 
-      {activeScanRunId && (
-        <ScanProgress
-          runId={activeScanRunId}
-          status={scanStatus ?? "running"}
-          events={scanEvents}
-          onCancel={() => {
-            setActiveScanRunId(null);
-            setScanStatus(null);
-          }}
-          onComplete={handleScanComplete}
-        />
+      {scans.length > 0 && (
+        <div className="space-y-3">
+          {scans.map((scan) => (
+            <ScanProgress
+              key={scan.id}
+              runId={scan.id}
+              status={scan.status}
+              events={scan.events}
+              competitorName={scan.competitorName}
+              onCancel={() => scan.status === "running" && removeScan(scan.id)}
+              onComplete={() => handleScanDone(scan.id)}
+            />
+          ))}
+        </div>
       )}
 
       {/* Competitors list */}
@@ -150,24 +310,26 @@ export function CompetitorManageView() {
           Available competitors
         </h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {competitors.map((competitor) => (
+          {filteredCompetitors.map((competitor) => (
             <CompetitorCard
               key={competitor.id}
               competitor={competitor}
               onRunScan={() => handleRunScan(competitor.id)}
-              isScanning={activeScanRunId === competitor.id}
+              isScanning={runningScans.some((s) => s.competitorId === competitor.id)}
               showCheckbox
               selected={selectedIds.has(competitor.id)}
               onToggleSelect={() => toggleSelect(competitor.id)}
+              onDelete={() => handleDelete(competitor)}
+              isDeleting={deletingId === competitor.id}
             />
           ))}
         </div>
         {loading && (
           <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">Loading competitors…</p>
         )}
-        {error && (
+        {(error || deleteError) && (
           <p className="mt-4 text-sm text-red-600 dark:text-red-400" role="alert">
-            {error}
+            {deleteError ?? error}
           </p>
         )}
         {!loading && competitors.length === 0 && (
@@ -245,6 +407,41 @@ export function CompetitorManageView() {
                             aria-label={`Competitor URL ${index + 1}`}
                           />
                         </label>
+                            <div className="pt-1.5">
+                              <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                                Scan channels
+                              </span>
+                              <div className="mt-1.5 flex flex-wrap gap-2">
+                                {sourceChannels.map((channel) => {
+                                  const isActive = row.channels.includes(channel);
+                                  return (
+                                    <button
+                                      key={channel}
+                                      type="button"
+                                      onClick={() => {
+                                        setFormRows((prev) => {
+                                          const next = [...prev];
+                                          const current = next[index];
+                                          const currentChannels = current.channels ?? [];
+                                          const updatedChannels = currentChannels.includes(channel)
+                                            ? currentChannels.filter((c) => c !== channel)
+                                            : [...currentChannels, channel];
+                                          next[index] = { ...current, channels: updatedChannels };
+                                          return next;
+                                        });
+                                      }}
+                                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                                        isActive
+                                          ? "border-violet-500 bg-violet-600 text-white shadow-sm"
+                                          : "border-neutral-200 bg-white text-zinc-700 hover:border-violet-200 hover:text-violet-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-zinc-300 dark:hover:border-violet-700"
+                                      }`}
+                                    >
+                                      <span>{SOURCE_CHANNEL_LABELS[channel]}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
                       </div>
                     </fieldset>
                   ))}

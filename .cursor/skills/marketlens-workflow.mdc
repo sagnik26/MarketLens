@@ -1,0 +1,359 @@
+---
+name: marketlens-backend-workflow
+description: Guides the agent through MarketLens’s Next.js + MongoDB backend, TinyFish scan flow, and competitor-radar data model. Use when implementing or modifying API routes, scan services, TinyFish goals, or insights/information/status pages in this project.
+---
+
+# MarketLens Backend Workflow
+
+## Scope
+
+Use this skill whenever you:
+
+- Touch **competitor radar** (competitors, channels, scans)
+- Integrate or debug **TinyFish** calls
+- Change **scan persistence** (MongoDB models, repositories, services)
+- Update **Status**, **Insights**, or **Information** pages’ backend behavior
+
+The stack:
+
+- Next.js App Router (`src/app`)
+- Node runtime route handlers (`app/api/v1/...`)
+- MongoDB + Mongoose (`src/server/models`, `src/server/repositories`)
+- Domain services in `src/server/services`
+- TinyFish client + goals in `src/server/lib/tinyfish`
+
+---
+
+## Architectural Principles
+
+1. **Layering**
+   - Route handler → Service → Repository
+   - TinyFish calls only via `src/server/lib/tinyfish/client.ts`
+   - Business logic only in `src/server/services`
+   - Mongoose queries only in `src/server/repositories`
+
+2. **API Routing**
+   - All versioned APIs live under `src/app/api/v1/.../route.ts`
+   - Always `export const runtime = "nodejs"` for Mongo-backed routes
+   - Handlers wrapped with `withApiHandler` and respond via `apiSuccess` / `apiError`
+
+3. **Types & DTOs**
+   - Shared backend types: `src/types` (e.g. `ScanRun`, `BackendChange`, `BackendInsight`)
+   - Frontend feature types: `src/components/features/*/...types.ts`
+   - Competitor shape in UI includes `channels: SourceChannel[]`
+
+---
+
+## Data Model & Repositories
+
+### Competitors
+
+- **Model**: `Competitor.model.ts`
+  - Fields: `companyId`, `name`, `website`, `logoUrl`, `isActive`, `channels: SourceChannel[]`, timestamps
+  - `channels` default: `["pricing"]`
+  - `toJSON` transforms to `CompetitorResponse` with:
+    - `id: string`
+    - `channels: SourceChannel[]` (string array)
+
+- **Repository**: `competitor.repository.ts`
+  - `findMany({ companyId, page, limit })` → `{ competitors, total }`
+  - `findById(companyId, id)` → `CompetitorResponse | null`
+  - `create({ companyId, name, website, logoUrl, channels? })`
+    - Must pass normalized `channels` (fallback to `["pricing"]` only if missing)
+  - `update`, `delete` scoped by `companyId`
+
+### ScanRun
+
+- **Model**: `ScanRun.model.ts`
+  - Fields: `companyId`, `goalName`, `status: ScanRunStatus`, `startedAt`, `completedAt`, `totalSignals`, `totalInsights`, `totalCompetitors`, `errorMessage?`, timestamps
+  - Index: `{ companyId: 1, startedAt: -1 }`
+
+- **Repository**: `scan.repository.ts`
+  - `create(args)` → persists a run, returns `ScanRun`
+  - `findMany({ companyId, page, limit })` → `{ scanRuns, total }` sorted newest-first
+
+### Change (signals)
+
+- **Model**: `Change.model.ts`
+  - Fields: `companyId`, `scanRunId`, `competitorId`, `competitorName`, `changeType`, `signalType`, `priority`, `title`, `summary`, `detectedAt: Date`, `pageType?: SourceChannel`, `url?: string`, timestamps
+  - Index: `{ companyId: 1, detectedAt: -1 }`
+
+- **Repository**: `change.repository.ts`
+  - `createMany({ companyId, scanRunId, changes })`
+    - Maps `BackendChange` → `Change` docs (normalizes dates and ObjectIds)
+  - `findRecentByCompany({ companyId, limit, pageType? })` → `BackendChange[]`
+
+---
+
+## TinyFish Integration
+
+### Client
+
+- **File**: `src/server/lib/tinyfish/client.ts`
+- Only place allowed to call `fetch` for TinyFish:
+
+  ```ts
+  const BASE_URL = "https://agent.tinyfish.ai/v1/automation";
+
+  export async function runSSE(
+    body: TinyFishRequest,
+  ): Promise<TinyFishSSEResult> {
+    const response = await fetch(`${BASE_URL}/run-sse`, {
+      method: "POST",
+      headers: buildHeaders(),
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      // Read body text/JSON, surface error in TinyFishSSEResult.error
+      return {
+        success: false,
+        resultJson: null,
+        status: "FAILED",
+        error: message,
+        rawEvents: [],
+      };
+    }
+
+    return parseSSEStream(response);
+  }
+  ```
+
+- Headers must include `X-API-Key` from `env.TINYFISH_API_KEY`.
+- `parseSSEStream` (in `sse-parser.ts`) builds `TinyFishSSEResult` from streamed SSE events.
+
+### Goals
+
+- All goals in `src/server/lib/tinyfish/goals/*.goal.ts`.
+- Jobs goal (`jobs.goal.ts`) returns strict JSON schema:
+
+  ```ts
+  {
+    "jobs": [{
+      "title": string,
+      "department": string | null,
+      "location": string | null,
+      "isRemote": boolean,
+      "postedAt": string | null,
+      "seniorityLevel": "junior" | "mid" | "senior" | "lead" | "executive" | null,
+      "isNewProductSignal": boolean,
+      "productSignalReason": string | null
+    }],
+    "totalCount": number
+  }
+  ```
+
+- Mapping from `SourceChannel` → goal is done only in `scan.service.ts` (via `resolveGoal`).
+
+---
+
+## Scan Flow (Competitor Radar)
+
+### 1. Trigger (Route Handler)
+
+- **Endpoint**: `POST /api/v1/scan/run` (`app/api/v1/scan/run/route.ts`)
+- Request body:
+
+  ```json
+  {
+    "competitorIds": ["..."],
+    "channels": ["pricing" | "jobs" | "product_hunt" | "features"]
+  }
+  ```
+
+- Flow:
+  1. Validate `competitorIds` & `channels` arrays.
+  2. Load competitors for demo company via `competitorRepository.findMany`.
+  3. Filter to `selected` competitors by `id`.
+  4. Build `pages`:
+
+     ```ts
+     const pages = selected.flatMap((c) =>
+       channels.map((channel) => ({
+         competitorId: c.id,
+         competitorName: c.name,
+         url: c.website,
+         channel,
+       })),
+     );
+     ```
+
+  5. Call `scanService.runCompetitorScan(pages)` and return its result.
+
+### 2. Service (TinyFish orchestration + persistence)
+
+- **File**: `src/server/services/scan.service.ts`
+
+Key responsibilities:
+
+1. Build TinyFish request:
+
+   ```ts
+   const body: TinyFishRequest = {
+     url: page.url,
+     goal: resolveGoal(page.channel),
+     browser_profile:
+       page.channel === PRICING || page.channel === JOBS ? "stealth" : "lite",
+     proxy_config: { enabled: false },
+   };
+   ```
+
+2. Call `runSSE(body)` for each page with `Promise.allSettled`.
+
+3. Summarize outcomes:
+   - `status`: `"completed"` unless all/some failed.
+   - `firstError`: first `result.error` from failed pages (if any).
+
+4. Map TinyFish `resultJson` → `BackendChange` / `BackendInsight`:
+   - For `jobs` channel, cast `resultJson` to the jobs schema and:
+     - Create a `BackendChange` per job (title, summary, `JOB_SIGNAL`, `signalType`, priority, `detectedAt`, `pageType: "jobs"`, `url`).
+     - Create one `BackendInsight` summarizing counts per competitor (`Hiring signals from jobs page`).
+
+5. Persist run + changes in Mongo:
+
+   ```ts
+   const scanRun = await scanRepository.create({
+     companyId: DEMO_COMPANY_ID,
+     goalName: "competitor_radar_scan",
+     status,
+     startedAt,
+     completedAt: nowIso,
+     totalSignals: changes.length,
+     totalInsights: insights.length,
+     totalCompetitors,
+     errorMessage: firstError,
+   });
+
+   if (changes.length) {
+     await changeRepository.createMany({
+       companyId: DEMO_COMPANY_ID,
+       scanRunId: scanRun.id,
+       changes,
+     });
+   }
+
+   return { scanRun, changes, insights };
+   ```
+
+### 3. Frontend Trigger
+
+- **Component**: `CompetitorManageView.tsx`
+- Per-competitor channels:
+  - Stored in Mongo on `competitor.channels`.
+  - When running scan:
+
+    ```ts
+    const current = competitors.find((c) => c.id === activeScanRunId);
+    const channelsForCompetitor =
+      current && current.channels.length
+        ? current.channels
+        : [SourceChannel.PRICING];
+
+    fetch("/api/v1/scan/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        competitorIds: [activeScanRunId],
+        channels: channelsForCompetitor,
+      }),
+    });
+    ```
+
+- Add Competitor modal:
+  - Each row has a per-row multi-select for **Scan channels**.
+  - `addCompetitorsAction` is called with `{ name, url, channels: [...] }`, and those channels are saved on the competitor.
+
+---
+
+## Status / Insights / Information
+
+### Status Page
+
+- **Action**: `getStatusSummaryAction` (`status.actions.ts`)
+- Reads recent runs from Mongo:
+
+  ```ts
+  const { scanRuns } = await scanRepository.findMany({
+    companyId: DEMO_COMPANY_ID,
+    limit: 20,
+  });
+  const recentRuns = scanRuns;
+  const lastRun = recentRuns[0] ?? undefined;
+  ```
+
+- The Status page shows `recentRuns` and agent cards; no in-memory buffers.
+
+### Insights Page
+
+- **Service**: `insightsService.getSummary()`:
+  1. Loads recent changes from `changeRepository.findRecentByCompany`.
+  2. Groups them into derived `BackendInsight` objects per `(competitorId, pageType)`.
+  3. Builds a weekly `trend: InsightTrendPoint[]` from `generatedAt`.
+
+- **Action**: `getInsightsSummaryAction` wraps this as an `ActionResponse`.
+- **Page**: `dashboard/insights/page.tsx`:
+  - Shows line chart of `trend`.
+  - Lists `insights` by channel (`SOURCE_CHANNEL_LABELS`) using `pageType`.
+
+### Information Page
+
+- **Service**: `informationService.getSummary()`:
+  1. Loads competitors (`competitorRepository.findMany`).
+  2. Loads recent changes (`changeRepository.findRecentByCompany`).
+  3. For each channel (`pricing`, `jobs`, `product_hunt`, `features`):
+     - Filters changes where `chg.competitorId === c.id && chg.pageType === channel`.
+     - **Only** builds a profile when there is at least one change.
+     - Each profile:
+
+       ```ts
+       {
+         name: c.name,
+         segment: channel === JOBS ? "Hiring" : "Product",
+         focus: `${count} <channel> signals detected. Latest: ${latest.title}`,
+         lastScan: latest.detectedAt,
+         channel,
+       }
+       ```
+
+  4. Filters out any channel group with `profiles.length === 0`.
+
+- **Page**: `dashboard/information/page.tsx`:
+  - If `summary.competitorRadar.channels.length === 0`, shows a single “No signals yet” EmptyState.
+  - Otherwise renders one card per channel with competitors and last-scan info.
+
+---
+
+## Implementation Checklist
+
+When modifying this part of the codebase:
+
+1. **Add/modify models**
+   - Use `src/server/models/*`.
+   - Include timestamps and necessary indexes.
+   - Export via `src/server/models/index.ts` if needed.
+
+2. **Add repository methods**
+   - In `src/server/repositories/*`.
+   - Always `await dbConnect()` first.
+   - Accept `companyId: string`, convert with `new mongoose.Types.ObjectId(companyId)`.
+   - Return plain TS objects (no Mongoose Documents).
+
+3. **Update services**
+   - Use repositories + TinyFish client; never Mongoose directly.
+   - Services are HTTP-agnostic and can be re-used by route handlers and Server Actions.
+
+4. **Route handlers**
+   - Validate body shape explicitly.
+   - Use `withApiHandler` and `apiSuccess` / `apiError`.
+   - Keep them thin; delegate work to services.
+
+5. **Frontend sync**
+   - Ensure UI types match backend responses (e.g. `competitor.channels`).
+   - When adding new channels, update:
+     - `SourceChannel` and `SOURCE_CHANNEL_LABELS`
+     - Competitor Radar UI chips and forms
+     - Information / Insights channel lists as needed.
+
+6. **No in-memory persistence**
+   - Do not introduce global arrays for runs or signals.
+   - All persisted state must go through repositories to MongoDB.

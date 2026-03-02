@@ -1,11 +1,14 @@
 /** Domain types for Competitor Radar UI and Server Action payloads. */
 
+import type { SourceChannel } from "@/constants";
+
 export interface Competitor {
   id: string;
   name: string;
   website: string;
   logoUrl: string | null;
   isActive: boolean;
+  channels: SourceChannel[];
 }
 
 export interface Change {

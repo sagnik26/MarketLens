@@ -36,3 +36,19 @@ export const PageType = {
   COMPLIANCE: "compliance",
   CUSTOM: "custom",
 } as const;
+
+export const SourceChannel = {
+  PRICING: "pricing",
+  JOBS: "jobs",
+  PRODUCT_HUNT: "product_hunt",
+  FEATURES: "features",
+} as const;
+
+export type SourceChannel = (typeof SourceChannel)[keyof typeof SourceChannel];
+
+export const SOURCE_CHANNEL_LABELS: Record<SourceChannel, string> = {
+  [SourceChannel.PRICING]: "Pricing pages",
+  [SourceChannel.JOBS]: "Job postings",
+  [SourceChannel.PRODUCT_HUNT]: "Product Hunt",
+  [SourceChannel.FEATURES]: "Features pages",
+};

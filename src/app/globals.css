@@ -9,4 +9,14 @@
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
   }
+
+  @keyframes status-border-shimmer {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+
+  @keyframes status-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.85; }
+  }
 }
