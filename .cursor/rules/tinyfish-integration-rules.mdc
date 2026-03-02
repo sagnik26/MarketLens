@@ -1,0 +1,768 @@
+---
+name: tinyfish-integration
+description: >
+  Rules for integrating TinyFish Web Agent into the Vigil platform.
+  Reference this for all TinyFish client code, SSE parsing, goal templates,
+  scan services, and any file that touches the TinyFish API.
+  Covers all three execution modes: run (sync), run-async, run-sse.
+globs:
+  - "**/lib/tinyfish/**"
+  - "**/server/lib/tinyfish/**"
+  - "**/services/scan*"
+  - "**/server/services/scan*"
+  - "**/server/services/change-detection*"
+  - "**/services/change-detection*"
+  - "**/app/api/v1/scan/**"
+  - "**/app/api/v1/compliance/**"
+alwaysApply: false
+---
+
+# TinyFish Web Agent — Vigil Integration Rules
+
+**Source of truth:** [TinyFish Web Agent Documentation](https://docs.tinyfish.ai)
+
+Reference the official docs before writing any TinyFish integration code. TinyFish code lives under **`src/server/`** (see [nextjs-api-backend-rules.mdc](.cursor/rules/nextjs-api-backend-rules.mdc)).
+
+- [Endpoints](https://docs.tinyfish.ai/key-concepts/endpoints) — `/run`, `/run-async`, `/run-sse`
+- [Runs](https://docs.tinyfish.ai/key-concepts/runs) — lifecycle, statuses, polling, cancel
+- [Authentication](https://docs.tinyfish.ai/authentication) — `X-API-Key` header
+- [API Reference (SSE)](https://docs.tinyfish.ai/api-reference/automation/run-browser-automation-with-sse-streaming)
+- [Error Codes](https://docs.tinyfish.ai/error-codes) — MISSING_API_KEY, INVALID_API_KEY, FORBIDDEN (credits), etc.
+
+---
+
+## CORE PRINCIPLES
+
+- Write concise, production-grade TinyFish integrations.
+- Always generate structured JSON schemas in goals.
+- Use explicit numbered steps for multi-step workflows.
+- Include error-handling instructions inside every goal.
+- Default to predictable, strict output formats.
+- Avoid vague instructions like "get the data".
+- Include fallback behavior when elements are missing.
+- Keep schema identical across all batch runs — no dynamic keys.
+- Always specify expected return structure.
+- Validate TinyFish resultJson before trusting — treat as unknown.
+
+---
+
+## API CONFIGURATION
+
+```
+Base URL:     https://agent.tinyfish.ai/v1/automation/
+Auth Header:  X-API-Key: YOUR_TINYFISH_API_KEY
+Content-Type: application/json
+Env Variable: TINYFISH_API_KEY
+```
+
+### CRITICAL NAMING — snake_case only
+
+- Field is `browser_profile` — NEVER `browserProfile`
+- Field is `proxy_config` — NEVER `proxyConfig`
+
+### Authentication
+
+- ALWAYS use `X-API-Key` header
+- NEVER use `Authorization: Bearer` — TinyFish does not use Bearer tokens
+- NEVER access `process.env.TINYFISH_API_KEY` directly
+- ALWAYS import from `config/env.ts` with Zod validation
+
+```typescript
+// config/env.ts — add to existing Zod schema
+TINYFISH_API_KEY: z.string().min(1);
+```
+
+### Request Body Shape
+
+All three endpoints accept the same body. Required: `url`, `goal`. Optional: `browser_profile`, `proxy_config`, `api_integration`, `feature_flags`.
+
+```typescript
+interface TinyFishRequest {
+  url: string; // Required. Target website URL.
+  goal: string; // Required. Natural language description of the task.
+  browser_profile?: "lite" | "stealth"; // Optional. Default: 'lite'
+  proxy_config?: {
+    enabled: boolean;
+    country_code?: string; // e.g. 'US' | 'GB' | 'CA' | 'DE' | 'FR' | 'JP' | 'AU' (IN if supported)
+  };
+  api_integration?: string; // Optional. e.g. "vigil" — for analytics.
+  feature_flags?: { enable_agent_memory?: boolean }; // Optional.
+}
+```
+
+### Browser Profiles
+
+- `lite` — default, fast. Use for: company blogs, changelogs, Product Hunt, GitHub, most startup marketing pages.
+- `stealth` — anti-bot environments. Use for: BSE/NSE portals, LinkedIn Jobs, G2, Capterra, competitor pricing pages.
+
+```typescript
+// Vigil profile reference
+const BROWSER_PROFILES = {
+  bseCirculars: "stealth",
+  nseCirculars: "stealth",
+  competitorPricing: "stealth",
+  competitorJobsLinkedIn: "stealth",
+  competitorJobsSite: "lite",
+  g2Reviews: "stealth",
+  competitorBlog: "lite",
+  productHunt: "lite",
+  githubReleases: "lite",
+} as const;
+```
+
+---
+
+## EXECUTION MODES
+
+Three modes exist. Choose based on the user interaction pattern. See [Endpoints](https://docs.tinyfish.ai/key-concepts/endpoints).
+
+### 1. run-sse — Streaming (Primary for Vigil)
+
+```
+POST https://agent.tinyfish.ai/v1/automation/run-sse
+```
+
+Use when:
+
+- User triggers a manual scan from the dashboard
+- You need real-time progress streamed to the UI
+- Building the ScanProgress live feed component
+
+Expect (SSE event types):
+
+- `STARTED` — includes `runId`
+- `STREAMING_URL` — optional; URL to watch browser live (valid 24h)
+- `PROGRESS` — browser actions (e.g. `purpose`)
+- `HEARTBEAT` — keep-alive
+- `COMPLETE` — includes `status` (`COMPLETED` | `FAILED` | `CANCELLED`), `resultJson`, and optionally `error` / `help_message`
+
+```typescript
+const response = await fetch(
+  "https://agent.tinyfish.ai/v1/automation/run-sse",
+  {
+    method: "POST",
+    headers: {
+      "X-API-Key": env.TINYFISH_API_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      url: "https://competitor.com/pricing",
+      goal: pricingGoal,
+      browser_profile: "stealth",
+      proxy_config: { enabled: false },
+    }),
+  },
+);
+// response.body is a ReadableStream — pass to parseSSEStream()
+```
+
+### 2. run — Synchronous / Blocking (Quick Checks)
+
+Official docs use `/run` (not `run-sync`). See [Endpoints](https://docs.tinyfish.ai/key-concepts/endpoints).
+
+```
+POST https://agent.tinyfish.ai/v1/automation/run
+```
+
+Use when:
+
+- Task is short and fast (under ~30 seconds)
+- You need immediate response without streaming
+- Simple compliance spot-checks
+
+Runs created via `/run` cannot be cancelled. The request blocks until completion.
+
+```typescript
+const response = await fetch(
+  "https://agent.tinyfish.ai/v1/automation/run",
+  {
+    method: "POST",
+    headers: {
+      "X-API-Key": env.TINYFISH_API_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      url: "https://bseindia.com/corporates/Notices_Circulars.html",
+      goal: complianceGoal,
+      browser_profile: "stealth",
+      proxy_config: { enabled: false },
+    }),
+  },
+);
+const run = await response.json();
+// run.result contains extracted data when run.status === "COMPLETED"
+```
+
+### 3. run-async — Background Jobs (Automation Mode)
+
+```
+POST https://agent.tinyfish.ai/v1/automation/run-async
+```
+
+Use when:
+
+- User has enabled automation (scheduled scans)
+- Large scraping workflows — 10+ pages
+- Background jobs that must not block the request
+
+Returns `{ run_id: string }` — MUST store and poll for completion. See [Runs](https://docs.tinyfish.ai/key-concepts/runs).
+
+**Run statuses:** `PENDING` | `RUNNING` | `COMPLETED` | `FAILED` | `CANCELLED`
+
+**Poll for result:** `GET https://agent.tinyfish.ai/v1/runs/{run_id}` — response has `status`, `result` (when COMPLETED), `error` (when FAILED).
+
+**Cancel run:** `POST https://agent.tinyfish.ai/v1/runs/{run_id}/cancel` — only for runs created via `/run-async` or `/run-sse`.
+
+```typescript
+// Step 1 — Start async job
+const response = await fetch(
+  "https://agent.tinyfish.ai/v1/automation/run-async",
+  {
+    method: "POST",
+    headers: {
+      "X-API-Key": env.TINYFISH_API_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      url: pageUrl,
+      goal: pageGoal,
+      browser_profile: "stealth",
+      proxy_config: { enabled: false },
+    }),
+  },
+);
+const { run_id } = await response.json();
+
+// Step 2 — Store run_id in ScanRun document
+await scanRepository.updateExternalRunId({ scanRunId, run_id });
+
+// Step 3 — Poll GET /v1/runs/{run_id} until status is COMPLETED or FAILED
+// Use async-poller.ts for polling logic. Run object: run_id, status, result, error, streamingUrl
+```
+
+---
+
+## ARCHITECTURE — WHERE TINYFISH LIVES IN VIGIL
+
+```
+src/
+├── server/
+│   ├── lib/
+│   │   └── tinyfish/
+│   │       ├── client.ts           # ONLY file that calls fetch to TinyFish API
+│   │       ├── sse-parser.ts       # Parses SSE ReadableStream → TinyFishSSEResult
+│   │       ├── async-poller.ts     # Polls run-async status until completion
+│   │       ├── tinyfish.types.ts   # All TinyFish types — no any, no unknown
+│   │       └── goals/
+│   │           ├── pricing.goal.ts
+│   │           ├── jobs.goal.ts
+│   │           ├── reviews.goal.ts
+│   │           ├── changelog.goal.ts
+│   │           ├── features.goal.ts
+│   │           └── compliance.goal.ts
+│   ├── services/
+│   │   ├── scan.service.ts         # Orchestrates TinyFish via client
+│   │   └── change-detection.service.ts
+│   └── repositories/
+│       └── scan.repository.ts      # All DB queries for ScanRun, Change, Competitor
+```
+
+### Architecture Rules
+
+- `server/lib/tinyfish/client.ts` is the ONLY file that calls `fetch` to TinyFish — no exceptions
+- Services call the client — NEVER call fetch directly in services
+- Route handlers call services — NEVER import from `server/lib/tinyfish` in route handlers (import from `@/server/services/...` instead)
+- Goals live in `server/lib/tinyfish/goals/` — one file per page type
+- Goals are exported as builder functions, NOT string constants (allows parameterisation)
+- All types in `tinyfish.types.ts` — NEVER use `any`
+- Validate `resultJson` shape with Zod before use — treat as `unknown` until confirmed
+
+---
+
+## SSE STREAM PARSING
+
+The `run-sse` endpoint streams Server-Sent Events. See [API Reference (SSE)](https://docs.tinyfish.ai/api-reference/automation/run-browser-automation-with-sse-streaming).
+
+The final `COMPLETE` event carries **`resultJson`** (not `result`) with extracted data. Handle `event.status` (`COMPLETED` | `FAILED` | `CANCELLED`) and optional `event.error`.
+
+```typescript
+// lib/tinyfish/sse-parser.ts
+
+export interface TinyFishSSEResult {
+  success: boolean;
+  resultJson: unknown; // Validate with Zod before use
+  status: string;
+  rawEvents: TinyFishSSEEvent[];
+}
+
+export interface TinyFishSSEEvent {
+  type: string;
+  status?: string;
+  resultJson?: unknown;
+  message?: string;
+}
+
+async function parseSSEStream(response: Response) {
+  if (!response.body) {
+    throw new Error("No response body received from TinyFish");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  let buffer = "";
+  const events: any[] = [];
+
+  let finalResult: any = null;
+  let failed = false;
+  let failureReason: string | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    // Split on SSE event boundary
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() || "";
+
+    for (const part of parts) {
+      const line = part.trim();
+
+      if (!line.startsWith("data:")) continue;
+
+      const jsonString = line.replace(/^data:\s*/, "").trim();
+
+      if (!jsonString) continue;
+
+      try {
+        const event = JSON.parse(jsonString);
+        events.push(event);
+
+        // ---- FAILURE DETECTION ----
+        if (
+          event.type === "ERROR" ||
+          event.status === "FAILED" ||
+          event.status === "CANCELLED" ||
+          (event.type === "COMPLETE" && event.status !== "COMPLETED")
+        ) {
+          failed = true;
+          failureReason =
+            event.error ?? event.message ?? event.help_message ?? "TinyFish reported failure";
+        }
+
+        // ---- RESULT DETECTION (docs: COMPLETE event has resultJson) ----
+        if (event.type === "COMPLETE" && event.resultJson !== undefined && event.resultJson !== null) {
+          finalResult = event.resultJson;
+        }
+      } catch (err) {
+        console.warn("Failed to parse SSE chunk:", jsonString);
+      }
+    }
+  }
+
+  const hasResult = finalResult !== null;
+
+  return {
+    success: hasResult && !failed,
+    status: failed ? "FAILED" : hasResult ? "COMPLETED" : "IN_PROGRESS",
+    resultJson: finalResult,
+    error: failureReason,
+    rawEvents: events,
+  };
+}
+```
+
+### SSE Parsing Rules
+
+- ALWAYS call `reader.releaseLock()` in `finally` block
+- ALWAYS wrap line parser in `try/catch` — skip malformed lines silently
+- NEVER throw from inside the stream reader loop
+- Only the `COMPLETE` event carries `resultJson` (API field name; do not use `result` for SSE)
+- Use `event.status` for COMPLETED / FAILED / CANCELLED; use `event.error` for failure reason
+- Forward progress events (`PROGRESS`, `STREAMING_URL`) to your own SSE route for live UI updates
+
+---
+
+## GOAL WRITING STANDARDS
+
+Goals are the most important variable in TinyFish output quality.
+A well-written goal returns clean, consistent JSON every run.
+A vague goal returns inconsistent shapes that break Gemini enrichment and change detection.
+
+### Five Required Elements — Every Goal Must Have All Five
+
+1. Clear objective — what to extract and from which section
+2. Numbered steps — for any multi-step interaction (navigate → click → wait → extract)
+3. Strict JSON schema — exact field names, types, array structure
+4. Null handling rules — what to return when data is missing
+5. Output constraint — "Return ONLY valid JSON. No prose. No markdown."
+
+### Goal Template
+
+```
+Extract [specific data] from [specific section of this page].
+
+Return JSON matching this exact schema:
+{
+  "field_one": string,
+  "field_two": number,
+  "field_three": boolean,
+  "items": [{ "name": string, "value": number }]
+}
+
+Rules:
+- If a field is not found, return null for that field.
+- Do not add fields not in the schema.
+- Numeric fields must be numbers, not strings.
+- Trim all whitespace from string values.
+- Return ONLY valid JSON. No prose. No markdown.
+```
+
+### Multi-Step Workflow Template
+
+```
+1. Navigate to [specific section or tab].
+2. Click [button description] if present.
+3. Wait for [expected content or condition].
+4. Extract [specific fields].
+
+Return JSON matching this exact schema:
+{
+  "result_field": string | null
+}
+
+If step 2 element is not found, skip to step 4.
+If no data found after step 4, return { "result_field": null }.
+Return ONLY valid JSON. No prose. No markdown.
+```
+
+### Anti-Patterns — NEVER Write These
+
+```typescript
+// ❌ Too vague — returns inconsistent shapes every run
+"Get the pricing information";
+
+// ❌ No schema — field names vary between runs
+"Extract all plan names and prices as JSON";
+
+// ❌ No null handling — crashes when any field is missing
+"Return plan name and price for each tier";
+
+// ❌ Allows prose — wraps JSON in explanation text
+"Find the pricing and tell me what you found";
+
+// ❌ Dynamic keys — schema changes per competitor
+"Return an object where keys are plan names and values are prices";
+```
+
+---
+
+## GOAL LIBRARY — VIGIL SOURCES
+
+### Pricing Goal
+
+```typescript
+// lib/tinyfish/goals/pricing.goal.ts
+export function buildPricingGoal(): string {
+  return `
+Extract all pricing plans from this page.
+
+Return JSON matching this exact schema:
+{
+  "plans": [
+    {
+      "name":           string,
+      "monthlyPrice":   number | null,
+      "annualPrice":    number | null,
+      "currency":       string,
+      "features":       string[],
+      "usageLimits":    string | null,
+      "ctaText":        string | null,
+      "isPopular":      boolean
+    }
+  ],
+  "hasPricingHidden": boolean,
+  "hiddenNote":       string | null
+}
+
+Rules:
+- If monthly price is not shown, return null for monthlyPrice.
+- If pricing requires contacting sales, set hasPricingHidden to true.
+- features must be an array of strings, never a single string.
+- Strip currency symbols — price values must be numbers.
+- Return ONLY valid JSON. No prose. No markdown.
+  `.trim();
+}
+```
+
+### Jobs Goal
+
+```typescript
+// lib/tinyfish/goals/jobs.goal.ts
+export function buildJobsGoal(): string {
+  return `
+Extract all open job postings listed on this page.
+
+Return JSON matching this exact schema:
+{
+  "jobs": [
+    {
+      "title":               string,
+      "department":          string | null,
+      "location":            string | null,
+      "isRemote":            boolean,
+      "postedAt":            string | null,
+      "seniorityLevel":      "junior" | "mid" | "senior" | "lead" | "executive" | null,
+      "isNewProductSignal":  boolean,
+      "productSignalReason": string | null
+    }
+  ],
+  "totalCount": number
+}
+
+Rules:
+- isNewProductSignal is true if the role suggests a new product area being built.
+- productSignalReason explains why, or null if isNewProductSignal is false.
+- postedAt should be ISO date string if parseable, else raw text, else null.
+- Return ONLY valid JSON. No prose. No markdown.
+  `.trim();
+}
+```
+
+### Reviews Goal
+
+```typescript
+// lib/tinyfish/goals/reviews.goal.ts
+export function buildReviewsGoal(limit = 10): string {
+  return `
+Extract the most recent ${limit} reviews from this page.
+
+Return JSON matching this exact schema:
+{
+  "reviews": [
+    {
+      "rating":           number,
+      "reviewerRole":     string | null,
+      "companySizeRange": string | null,
+      "pros":             string,
+      "cons":             string,
+      "summary":          string,
+      "postedAt":         string | null
+    }
+  ],
+  "averageRating": number | null,
+  "totalReviews":  number | null
+}
+
+Rules:
+- rating must be a number between 1 and 5.
+- summary is one sentence capturing the reviewer's main point.
+- Return reviews sorted newest first.
+- Return ONLY valid JSON. No prose. No markdown.
+  `.trim();
+}
+```
+
+### Compliance Goal
+
+```typescript
+// lib/tinyfish/goals/compliance.goal.ts
+export function buildComplianceGoal(daysBack = 7): string {
+  return `
+Find all circulars or notifications published in the last ${daysBack} days on this page.
+
+Return JSON matching this exact schema:
+{
+  "circulars": [
+    {
+      "title":          string,
+      "circularNumber": string | null,
+      "category":       string | null,
+      "publishedAt":    string | null,
+      "url":            string | null,
+      "summary":        string | null
+    }
+  ],
+  "totalFound": number
+}
+
+Rules:
+- publishedAt should be ISO date string if parseable, else raw text, else null.
+- If no circulars found in the date range, return empty circulars array.
+- summary is one sentence describing what the circular requires.
+- Return ONLY valid JSON. No prose. No markdown.
+  `.trim();
+}
+```
+
+### Changelog Goal
+
+```typescript
+// lib/tinyfish/goals/changelog.goal.ts
+export function buildChangelogGoal(): string {
+  return `
+Extract all posts or changelog entries published in the last 30 days.
+
+Return JSON matching this exact schema:
+{
+  "entries": [
+    {
+      "title":       string,
+      "publishedAt": string | null,
+      "url":         string | null,
+      "summary":     string,
+      "isFeatureAnnouncement": boolean,
+      "isPivotSignal":         boolean
+    }
+  ],
+  "totalFound": number
+}
+
+Rules:
+- isFeatureAnnouncement is true if the entry announces a new product feature.
+- isPivotSignal is true if the entry suggests a major strategic direction change.
+- summary is one sentence describing what was released or announced.
+- Return ONLY valid JSON. No prose. No markdown.
+  `.trim();
+}
+```
+
+---
+
+## PARALLEL SCANNING — VIGIL CORE PATTERN
+
+ALWAYS use `Promise.allSettled` for parallel page scans.
+NEVER use `Promise.all` — one page failure must never block other pages.
+
+```typescript
+// services/scan.service.ts
+
+const pageResults = await Promise.allSettled(
+  pages.map((page) =>
+    tinyfishClient.runSSE({
+      url: page.url,
+      goal: resolveGoal(page.type),
+      browser_profile: page.browserProfile ?? "stealth",
+      proxy_config: { enabled: false },
+    }),
+  ),
+);
+
+const resolved = pageResults.map((result, i) => ({
+  page: pages[i],
+  success: result.status === "fulfilled" && result.value.success,
+  data: result.status === "fulfilled" ? result.value.resultJson : null,
+  error: result.status === "rejected" ? String(result.reason) : null,
+}));
+
+// Determine ScanRun status
+const allFailed = resolved.every((r) => !r.success);
+const someFailed = resolved.some((r) => !r.success);
+const status = allFailed ? "failed" : someFailed ? "partial" : "completed";
+```
+
+### ScanRun Status Rules
+
+| Condition           | Status      | triggeredBy            |
+| ------------------- | ----------- | ---------------------- |
+| All pages succeeded | `completed` | `user` or `automation` |
+| Some pages failed   | `partial`   | `user` or `automation` |
+| All pages failed    | `failed`    | `user` or `automation` |
+| Currently running   | `running`   | `user` or `automation` |
+
+### Manual-First Rule — CRITICAL
+
+- `triggeredBy` MUST be `'user'` for all dashboard-triggered scans
+- `triggeredBy` is `'automation'` ONLY when user has explicitly enabled automation in Settings
+- NEVER auto-trigger a TinyFish run without explicit user action or enabled automation setting
+
+---
+
+## EDGE CASE HANDLING
+
+### Required in Every Goal
+
+- What to return when an element is missing — always `null`, never omit the field
+- What to return when no results are found — empty array `[]`, not `null`
+- Maximum page limit for pagination — always cap at 5 pages to prevent infinite loops
+- What to return when login is required — `{ "success": false, "error": "Login required" }`
+
+### Pagination Pattern
+
+```
+1. Extract all items visible on the current page.
+2. If a "Next" or "Load More" button is present, click it.
+3. Wait for new items to appear.
+4. Extract newly loaded items.
+5. Repeat steps 2–4 until no next button exists or 5 pages reached.
+6. Aggregate all items — remove duplicates by name field.
+
+Return JSON:
+{
+  "items": [{ "name": string, "value": number | null }],
+  "pagesScanned": number
+}
+
+Rules:
+- Maximum 5 pages to prevent infinite loops.
+- Deduplicate by name field — no duplicate entries.
+- Return ONLY valid JSON. No prose. No markdown.
+```
+
+### Client-Level Error Handling Rules
+
+- TinyFish API call fails → return `{ success: false, resultJson: null }` — NEVER throw
+- Log API failures as `logger.warn()` — they are non-fatal to the pipeline
+- SSE stream ends without COMPLETE → return `{ success: false, status: 'FAILED' }`
+- `resultJson` fails Zod validation → log warn, store raw Change, flag for review — never discard
+- When status is COMPLETED, the result can still indicate goal-level failure (e.g. `result.status === "failure"`, `result.reason`) — handle in application logic; see [Runs](https://docs.tinyfish.ai/key-concepts/runs)
+- Max 2 retries with exponential backoff: 2s delay, 4s delay (capped at 10s)
+- After all retries fail → return failure result, log as `logger.error()`
+- Never expose TinyFish errors directly to the frontend
+
+---
+
+## BATCH EXTRACTION RULES
+
+- Keep schema IDENTICAL across all runs for the same source type
+- NEVER vary field names between runs
+- NEVER include dynamic keys
+- ALWAYS maintain consistent structure — Gemini enrichment depends on predictable shapes
+- Run goals for the same source type against multiple competitors — results must be comparable
+
+---
+
+## SECURITY & PRODUCTION RULES
+
+- NEVER hardcode API keys — always use `env.TINYFISH_API_KEY` from `config/env.ts`
+- NEVER access `process.env` directly — import only from `config/env.ts`
+- Use `run-async` for bulk scraping workflows (10+ pages)
+- Use `stealth` profile for bot-protected sites — default to stealth when unsure
+- Use `proxy_config: { enabled: true, country_code: 'IN' }` for geo-sensitive Indian portals if needed
+- Log structured output with Pino — NEVER `console.log` in production
+- Validate `resultJson` with Zod before use — treat as `unknown` until validated
+- NEVER expose raw TinyFish errors or stack traces to the frontend
+
+---
+
+## ENVIRONMENT SETUP
+
+```typescript
+// config/env.ts — add to existing Zod schema
+const envSchema = z.object({
+  // ... existing fields
+  TINYFISH_API_KEY: z.string().min(1),
+});
+```
+
+```bash
+# .env — never commit
+TINYFISH_API_KEY=tf_xxxxxxxxxxxxxxxxxxxxxxxx
+
+# .env.example — commit this
+TINYFISH_API_KEY=your_tinyfish_api_key_here
+```
+
+Get API key: https://agent.tinyfish.ai/api-keys

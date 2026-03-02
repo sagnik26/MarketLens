@@ -1,0 +1,1120 @@
+---
+description: Production-grade rules for scalable Next.js 15 App Router API Route Handlers with MongoDB and Mongoose; backend code lives under src/server/
+globs: ["**/app/api/**/*.ts", "**/server/**/*.ts", "**/middleware.ts"]
+alwaysApply: true
+---
+
+# Next.js 15 API Route Handlers — Production Backend Cursor Rules (MongoDB + Mongoose)
+
+You are an expert in Next.js 15 App Router, TypeScript, Route Handlers, MongoDB, Mongoose, Zod, and Redis.
+
+---
+
+## 1. Backend Architecture
+
+All backend-only code lives under **`src/server/`**. Route Handlers stay in **`src/app/api/`** and import from `@/server/...`. Shared config stays in `src/config/`; middleware in `src/middleware.ts`.
+
+```
+src/
+├── app/
+│   └── api/                          # Route Handlers only — import from @/server/...
+│       ├── v1/
+│       │   ├── users/
+│       │   │   ├── route.ts
+│       │   │   └── [id]/route.ts
+│       │   ├── auth/login/route.ts, auth/refresh/route.ts
+│       │   ├── scan/run/route.ts
+│       │   ├── compliance/route.ts
+│       │   └── webhooks/stripe/route.ts
+├── config/env.ts                     # Shared Zod-validated env (used by server + app)
+├── middleware.ts                     # CORS, auth guards
+└── server/                           # Backend-only — never import from client components
+    ├── api/
+    │   ├── route-handler.ts          # withApiHandler()
+    │   ├── errors.ts                 # HttpError classes
+    │   ├── response.ts               # apiSuccess, apiError, apiPaginated
+    │   └── middleware/               # auth, rateLimit, validate
+    ├── lib/
+    │   ├── db.ts                     # Mongoose singleton
+    │   ├── redis.ts
+    │   ├── logger.ts
+    │   ├── auth/                     # JWT, password, session
+    │   └── tinyfish/                 # TinyFish client, goals (see tinyfish-integration-rules)
+    ├── services/                     # Business logic (Route Handlers + Server Actions)
+    │   ├── users.service.ts
+    │   ├── auth.service.ts
+    │   ├── email.service.ts
+    │   ├── scan.service.ts
+    │   └── ...
+    ├── repositories/                 # All Mongoose queries
+    │   ├── users.repository.ts
+    │   ├── sessions.repository.ts
+    │   ├── scan.repository.ts
+    │   └── ...
+    └── models/                       # Mongoose schemas + models
+        ├── User.model.ts
+        └── index.ts
+```
+
+- ALWAYS keep backend code under `src/server/`. Route Handlers in `app/api/` import from `@/server/api/...`, `@/server/services/...`, `@/server/repositories/...`, `@/server/lib/...`.
+- ALWAYS version APIs: `/api/v1/...`. Plan for `/v2` from day one.
+- NEVER mix business logic into route handler files — it belongs in `server/services/`.
+- NEVER write Mongoose queries in services — they belong in `server/repositories/`.
+- ALWAYS use the layered flow: **Route Handler → Service → Repository**.
+- ALWAYS use `export const runtime = 'nodejs'` on route files that use Mongoose — Mongoose does NOT support Edge Runtime.
+
+---
+
+## 2. When to Use Route Handlers vs Server Actions
+
+Follow this decision tree strictly:
+
+```
+Is this called ONLY from your own Next.js frontend?
+  → YES → Is it a mutation?
+              → YES → Use a Server Action ('use server')
+              → NO  → Fetch directly in a React Server Component
+  → NO  → Use a Route Handler (external clients, mobile apps, webhooks, third-party)
+
+Does it need explicit HTTP semantics? (custom status codes, streaming, CORS, webhooks)
+  → YES → Use a Route Handler
+  → NO  → Use a Server Action
+
+Is it a webhook from an external service? (Stripe, GitHub, Twilio)
+  → ALWAYS a Route Handler
+```
+
+- NEVER create a Route Handler just to call it from your own React components — use Server Actions.
+- NEVER fetch from a Route Handler inside a Server Component — call `@/server/services/...` or repositories from the Server Component or a Server Action.
+- Route Handlers are for: public REST APIs, mobile clients, webhooks, BFF patterns, third-party integrations.
+
+---
+
+## 3. Route Handler Structure
+
+- ALWAYS use the Web `Request` / `Response` APIs. NEVER use Express-style `req`/`res`.
+- ALWAYS use `NextRequest` from `next/server` for access to cookies, headers, and IP.
+- ALWAYS `await` params in Next.js 15 — params is now a Promise.
+- ALWAYS export one named function per HTTP method: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`.
+- ALWAYS wrap handlers with `withApiHandler()` for consistent error handling.
+- ALWAYS add `export const runtime = 'nodejs'` to every route file using Mongoose/MongoDB.
+- NEVER use `try/catch` directly in route handlers — the wrapper handles it.
+
+```typescript
+// app/api/v1/users/[id]/route.ts
+import { type NextRequest } from 'next/server'
+import { withApiHandler } from '@/server/api/route-handler'
+import { authenticate } from '@/server/api/middleware/auth'
+import { userService } from '@/server/services/users.service'
+import { apiSuccess } from '@/server/api/response'
+
+export const runtime = 'nodejs' // Required — Mongoose needs Node.js runtime
+
+export const GET = withApiHandler(
+  async (req: NextRequest, ctx) => {
+    const { id } = await ctx.params
+    const user = await userService.getById(id)
+    return apiSuccess(user)
+  },
+  { middleware: [authenticate] }
+)
+
+export const PATCH = withApiHandler(
+  async (req: NextRequest, ctx) => {
+    const { id } = await ctx.params
+    const body = await req.json()
+    const user = await userService.update(id, body)
+    return apiSuccess(user)
+  },
+  { middleware: [authenticate] }
+)
+
+export const DELETE = withApiHandler(
+  async (_req: NextRequest, ctx) => {
+    const { id } = await ctx.params
+    await userService.delete(id)
+    return apiSuccess(null, 204)
+  },
+  { middleware: [authenticate] }
+)
+```
+
+---
+
+## 4. withApiHandler Wrapper
+
+Every route handler MUST be wrapped with `withApiHandler`. This handles error catching, logging, and middleware execution in one place.
+
+```typescript
+// server/api/route-handler.ts
+import { type NextRequest } from 'next/server'
+import { HttpError } from './errors'
+import { apiError } from './response'
+import { logger } from '@/server/lib/logger'
+
+type Middleware = (req: NextRequest) => Promise<void>
+
+interface HandlerOptions {
+  middleware?: Middleware[]
+}
+
+export function withApiHandler(
+  handler: (req: NextRequest, ctx: any) => Promise<Response>,
+  options: HandlerOptions = {}
+) {
+  return async (req: NextRequest, ctx: any): Promise<Response> => {
+    const requestId = crypto.randomUUID()
+
+    try {
+      for (const mw of options.middleware ?? [])
+        await mw(req)
+
+      return await handler(req, ctx)
+    } catch (error) {
+      if (error instanceof HttpError) {
+        logger.warn({ requestId, status: error.statusCode, message: error.message }, 'HTTP error')
+        return apiError(error.message, error.statusCode, error.code)
+      }
+
+      logger.error({ requestId, error }, 'Unhandled error in route handler')
+      return apiError('Internal Server Error', 500, 'INTERNAL_ERROR')
+    }
+  }
+}
+```
+
+---
+
+## 5. Typed Error Classes
+
+- ALWAYS throw typed `HttpError` subclasses from services — never raw strings or generic `Error`.
+- NEVER handle HTTP status codes inside services — throw errors and let the wrapper translate them.
+
+```typescript
+// server/api/errors.ts
+export class HttpError extends Error {
+  constructor(
+    public readonly statusCode: number,
+    message: string,
+    public readonly code?: string
+  ) {
+    super(message)
+    this.name = 'HttpError'
+  }
+}
+
+export class NotFoundError extends HttpError {
+  constructor(resource = 'Resource') {
+    super(404, `${resource} not found`, 'NOT_FOUND')
+  }
+}
+
+export class UnauthorizedError extends HttpError {
+  constructor(message = 'Unauthorized') {
+    super(401, message, 'UNAUTHORIZED')
+  }
+}
+
+export class ForbiddenError extends HttpError {
+  constructor(message = 'Forbidden') {
+    super(403, message, 'FORBIDDEN')
+  }
+}
+
+export class ValidationError extends HttpError {
+  constructor(message = 'Validation failed') {
+    super(422, message, 'VALIDATION_ERROR')
+  }
+}
+
+export class ConflictError extends HttpError {
+  constructor(resource = 'Resource') {
+    super(409, `${resource} already exists`, 'CONFLICT')
+  }
+}
+```
+
+---
+
+## 6. Typed Response Helpers
+
+- ALWAYS return a consistent envelope: `{ success, data, error, meta }`.
+- NEVER return raw data without wrapping it.
+- ALWAYS use `Response.json()` via these helpers.
+
+```typescript
+// server/api/response.ts
+interface ApiSuccessResponse<T> {
+  success: true
+  data: T
+  meta?: Record<string, unknown>
+}
+
+interface ApiErrorResponse {
+  success: false
+  error: { message: string; code?: string }
+}
+
+export function apiSuccess<T>(data: T, status = 200, meta?: Record<string, unknown>): Response {
+  const body: ApiSuccessResponse<T> = { success: true, data, ...(meta && { meta }) }
+  return Response.json(body, { status })
+}
+
+export function apiError(message: string, status = 500, code?: string): Response {
+  const body: ApiErrorResponse = { success: false, error: { message, ...(code && { code }) } }
+  return Response.json(body, { status })
+}
+
+export function apiPaginated<T>(
+  data: T[],
+  { total, page, limit }: { total: number; page: number; limit: number }
+): Response {
+  return apiSuccess(data, 200, { total, page, limit, totalPages: Math.ceil(total / limit) })
+}
+```
+
+---
+
+## 7. MongoDB Connection — Mongoose Singleton
+
+- ALWAYS use a cached/singleton connection pattern to prevent exhausting the MongoDB connection pool in serverless environments.
+- NEVER call `mongoose.connect()` without checking the existing connection state first.
+- ALWAYS call `dbConnect()` at the TOP of every repository function — not in route handlers.
+- ALWAYS set `bufferCommands: false` so Mongoose fails fast if not connected.
+- NEVER use Edge Runtime with Mongoose — always set `runtime = 'nodejs'`.
+- Use MongoDB Atlas for production. NEVER expose the connection string in client code.
+
+```typescript
+// server/lib/db.ts
+import mongoose from 'mongoose'
+import { env } from '@/config/env'
+
+interface MongooseCache {
+  conn: typeof mongoose | null
+  promise: Promise<typeof mongoose> | null
+}
+
+declare global {
+  var mongoose: MongooseCache | undefined
+}
+
+const cached: MongooseCache = global.mongoose ?? { conn: null, promise: null }
+
+if (!global.mongoose) global.mongoose = cached
+
+export async function dbConnect(): Promise<typeof mongoose> {
+  if (cached.conn) return cached.conn
+
+  if (!cached.promise) {
+    const opts = {
+      bufferCommands: false,
+      maxPoolSize: 10,
+      minPoolSize: 2,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 30000,
+      heartbeatFrequencyMS: 10000,
+      maxIdleTimeMS: 30000,
+    }
+
+    cached.promise = mongoose.connect(env.MONGODB_URI, opts)
+  }
+
+  try {
+    cached.conn = await cached.promise
+  } catch (error) {
+    cached.promise = null // Reset so next call retries
+    throw error
+  }
+
+  return cached.conn
+}
+```
+
+---
+
+## 8. Mongoose Models
+
+- ALWAYS define models in `server/models/` directory, one file per model.
+- ALWAYS use the `mongoose.models.ModelName || mongoose.model()` pattern to prevent model recompilation errors during hot reload.
+- ALWAYS define a TypeScript interface extending `Document` for full type safety.
+- ALWAYS use `{ timestamps: true }` on every schema for `createdAt`/`updatedAt`.
+- ALWAYS define indexes directly in the schema using `schema.index()` or field-level `index: true`.
+- ALWAYS set `{ toJSON: { virtuals: true, versionKey: false } }` to clean up output.
+- NEVER return `__v` or raw `_id` to clients — transform them in the schema's `toJSON`.
+- ALWAYS use `lean()` in read queries for better performance when you don't need Mongoose document methods.
+
+```typescript
+// server/models/User.model.ts
+import mongoose, { Schema, Document, Model } from 'mongoose'
+
+export interface IUser extends Document {
+  _id: mongoose.Types.ObjectId
+  email: string
+  name: string
+  password: string
+  role: 'admin' | 'member' | 'guest'
+  refreshToken?: string
+  isActive: boolean
+  createdAt: Date
+  updatedAt: Date
+}
+
+// Plain object type for API responses (no Mongoose Document methods)
+export interface UserResponse {
+  id: string
+  email: string
+  name: string
+  role: string
+  isActive: boolean
+  createdAt: Date
+}
+
+const userSchema = new Schema<IUser>(
+  {
+    email: {
+      type: String,
+      required: [true, 'Email is required'],
+      unique: true,
+      lowercase: true,
+      trim: true,
+      index: true,
+    },
+    name: {
+      type: String,
+      required: [true, 'Name is required'],
+      trim: true,
+      minlength: 2,
+      maxlength: 100,
+    },
+    password: {
+      type: String,
+      required: [true, 'Password is required'],
+      minlength: 8,
+      select: false, // NEVER returned in queries by default
+    },
+    role: {
+      type: String,
+      enum: ['admin', 'member', 'guest'],
+      default: 'member',
+    },
+    refreshToken: {
+      type: String,
+      select: false, // NEVER returned in queries by default
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  {
+    timestamps: true,
+    toJSON: {
+      virtuals: true,
+      versionKey: false,
+      transform: (_doc, ret) => {
+        ret.id = ret._id.toString()
+        delete ret._id
+        delete ret.password     // Extra safety — never expose password
+        delete ret.refreshToken // Extra safety — never expose token
+        return ret
+      },
+    },
+  }
+)
+
+// Compound indexes for common query patterns
+userSchema.index({ email: 1, isActive: 1 })
+
+// Prevent model recompilation in development hot reload
+export const UserModel: Model<IUser> =
+  mongoose.models.User ?? mongoose.model<IUser>('User', userSchema)
+```
+
+```typescript
+// server/models/index.ts — barrel export
+export { UserModel, type IUser, type UserResponse } from './User.model'
+export { PostModel, type IPost } from './Post.model'
+```
+
+---
+
+## 9. Repository Layer
+
+- ALL Mongoose queries happen in repositories only — never in services or handlers.
+- ALWAYS call `dbConnect()` at the start of every repository method.
+- ALWAYS use `.lean<T>()` on read queries — returns plain JS objects, not Mongoose Documents, which is faster and easier to serialize.
+- ALWAYS handle MongoDB-specific errors (duplicate key `code 11000`) and convert to domain errors.
+- ALWAYS use explicit field projection with `.select()` — never return the full document.
+- ALWAYS paginate `find()` queries with `.skip()` and `.limit()`. Never call `.find()` without a limit.
+- ALWAYS use `session` for multi-document transactions.
+
+```typescript
+// server/repositories/users.repository.ts
+import { dbConnect } from '@/server/lib/db'
+import { UserModel, type IUser, type UserResponse } from '@/server/models/User.model'
+import { ConflictError, NotFoundError } from '@/server/api/errors'
+import type { CreateUserDto, UpdateUserDto } from '@/types/users.types'
+import mongoose from 'mongoose'
+
+const USER_PUBLIC_FIELDS = 'id email name role isActive createdAt'
+
+export const userRepository = {
+  async findById(id: string): Promise<UserResponse | null> {
+    await dbConnect()
+    if (!mongoose.Types.ObjectId.isValid(id)) return null
+    return UserModel.findById(id).select(USER_PUBLIC_FIELDS).lean<UserResponse>()
+  },
+
+  async findByEmail(email: string): Promise<IUser | null> {
+    await dbConnect()
+    return UserModel.findOne({ email: email.toLowerCase() })
+      .select('+password +refreshToken') // Opt-in to select:false fields
+      .lean<IUser>()
+  },
+
+  async findMany({ page = 1, limit = 20, filter = {} }: {
+    page?: number
+    limit?: number
+    filter?: Record<string, unknown>
+  }) {
+    await dbConnect()
+    const safeLimit = Math.min(limit, 100)
+    const skip = (page - 1) * safeLimit
+
+    const [users, total] = await Promise.all([
+      UserModel
+        .find(filter)
+        .select(USER_PUBLIC_FIELDS)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(safeLimit)
+        .lean<UserResponse[]>(),
+      UserModel.countDocuments(filter),
+    ])
+
+    return { users, total }
+  },
+
+  async create(data: CreateUserDto): Promise<UserResponse> {
+    await dbConnect()
+    try {
+      const user = await UserModel.create(data)
+      return user.toJSON() as UserResponse
+    } catch (error: any) {
+      if (error.code === 11000) throw new ConflictError('User') // Duplicate key
+      throw error
+    }
+  },
+
+  async update(id: string, data: UpdateUserDto): Promise<UserResponse | null> {
+    await dbConnect()
+    if (!mongoose.Types.ObjectId.isValid(id)) return null
+    return UserModel
+      .findByIdAndUpdate(id, { $set: data }, { new: true, runValidators: true })
+      .select(USER_PUBLIC_FIELDS)
+      .lean<UserResponse>()
+  },
+
+  async delete(id: string): Promise<boolean> {
+    await dbConnect()
+    if (!mongoose.Types.ObjectId.isValid(id)) return false
+    const result = await UserModel.findByIdAndDelete(id)
+    return result !== null
+  },
+
+  async updateRefreshToken(id: string, token: string | null): Promise<void> {
+    await dbConnect()
+    await UserModel.findByIdAndUpdate(id, { $set: { refreshToken: token } })
+  },
+}
+```
+
+---
+
+## 10. Service Layer
+
+- Business logic ONLY lives in services.
+- Services are HTTP-agnostic — no `NextRequest`, no `Response`, no status codes.
+- Services throw `HttpError` subclasses for expected errors.
+- Services call repositories and other services. NEVER touch Mongoose/MongoDB directly.
+- Services are shared between Route Handlers AND Server Actions.
+
+```typescript
+// server/services/users.service.ts
+import { userRepository } from '@/server/repositories/users.repository'
+import { NotFoundError, ConflictError } from '@/server/api/errors'
+import { hashPassword } from '@/server/lib/auth/password'
+import type { CreateUserDto, UpdateUserDto } from '@/types/users.types'
+
+export const userService = {
+  async getById(id: string) {
+    const user = await userRepository.findById(id)
+    if (!user) throw new NotFoundError('User')
+    return user
+  },
+
+  async getMany({ page, limit }: { page?: number; limit?: number }) {
+    return userRepository.findMany({ page, limit, filter: { isActive: true } })
+  },
+
+  async create(data: CreateUserDto) {
+    const existing = await userRepository.findByEmail(data.email)
+    if (existing) throw new ConflictError('User')
+    const hashedPassword = await hashPassword(data.password)
+    return userRepository.create({ ...data, password: hashedPassword })
+  },
+
+  async update(id: string, data: UpdateUserDto) {
+    await this.getById(id) // throws NotFoundError if not found
+    const updated = await userRepository.update(id, data)
+    if (!updated) throw new NotFoundError('User')
+    return updated
+  },
+
+  async delete(id: string) {
+    await this.getById(id)
+    await userRepository.delete(id)
+  },
+}
+```
+
+---
+
+## 11. Input Validation with Zod
+
+- ALWAYS validate ALL incoming data (body, params, query) with Zod.
+- ALWAYS define schemas in `types/` as the single source of truth.
+- ALWAYS validate MongoDB ObjectId params before passing to repositories.
+- NEVER pass raw request data to services.
+
+```typescript
+// types/users.types.ts
+import { z } from 'zod'
+
+export const objectIdSchema = z.string().refine(
+  (val) => /^[a-f\d]{24}$/i.test(val),
+  { message: 'Invalid MongoDB ObjectId' }
+)
+
+export const createUserSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  name: z.string().min(2, 'Name too short').max(100, 'Name too long'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+})
+
+export const updateUserSchema = createUserSchema
+  .partial()
+  .omit({ password: true })
+
+export const paginationSchema = z.object({
+  page: z.coerce.number().min(1).default(1),
+  limit: z.coerce.number().min(1).max(100).default(20),
+})
+
+export type CreateUserDto = z.infer<typeof createUserSchema>
+export type UpdateUserDto = z.infer<typeof updateUserSchema>
+
+// server/api/middleware/validate.ts
+import { type ZodSchema } from 'zod'
+import { ValidationError } from '@/server/api/errors'
+import { type NextRequest } from 'next/server'
+
+export async function validateBody<T>(req: NextRequest, schema: ZodSchema<T>): Promise<T> {
+  const body = await req.json().catch(() => ({}))
+  const result = schema.safeParse(body)
+  if (!result.success) {
+    const message = result.error.flatten().formErrors[0]
+      ?? Object.values(result.error.flatten().fieldErrors)[0]?.[0]
+      ?? 'Validation failed'
+    throw new ValidationError(message)
+  }
+  return result.data
+}
+
+export function validateQuery<T>(req: NextRequest, schema: ZodSchema<T>): T {
+  const query = Object.fromEntries(new URL(req.url).searchParams)
+  const result = schema.safeParse(query)
+  if (!result.success) throw new ValidationError('Invalid query parameters')
+  return result.data
+}
+```
+
+---
+
+## 12. Authentication Middleware
+
+- ALWAYS store JWTs in httpOnly cookies — never in localStorage.
+- ALWAYS use short-lived access tokens (15min) + refresh tokens (7d).
+- ALWAYS store `refreshToken` in the User document with `select: false`.
+- ALWAYS invalidate refresh tokens on logout by setting `refreshToken: null` in the DB.
+- NEVER inline auth logic in route handlers.
+
+```typescript
+// server/api/middleware/auth.ts
+import { type NextRequest } from 'next/server'
+import { UnauthorizedError, ForbiddenError } from '@/server/api/errors'
+import { verifyAccessToken } from '@/server/lib/auth/jwt'
+import { userRepository } from '@/server/repositories/users.repository'
+
+export async function authenticate(req: NextRequest): Promise<void> {
+  const token =
+    req.cookies.get('access_token')?.value ??
+    req.headers.get('authorization')?.replace('Bearer ', '')
+
+  if (!token) throw new UnauthorizedError('No token provided')
+
+  const payload = verifyAccessToken(token) // throws if invalid or expired
+
+  const user = await userRepository.findById(payload.sub)
+  if (!user || !user.isActive) throw new UnauthorizedError()
+
+  req.headers.set('x-user-id', user.id)
+  req.headers.set('x-user-role', user.role)
+}
+
+export function authorize(...roles: string[]) {
+  return async (req: NextRequest): Promise<void> => {
+    const role = req.headers.get('x-user-role')
+    if (!role || !roles.includes(role))
+      throw new ForbiddenError('Insufficient permissions')
+  }
+}
+
+// lib/auth/jwt.ts
+import jwt from 'jsonwebtoken'
+import { env } from '@/config/env'
+import { UnauthorizedError } from '@/server/api/errors'
+
+export interface JwtPayload {
+  sub: string    // MongoDB user _id as string
+  role: string
+  iat: number
+  exp: number
+}
+
+export function signAccessToken(payload: Omit<JwtPayload, 'iat' | 'exp'>): string {
+  return jwt.sign(payload, env.JWT_ACCESS_SECRET, { expiresIn: '15m' })
+}
+
+export function signRefreshToken(payload: Pick<JwtPayload, 'sub'>): string {
+  return jwt.sign(payload, env.JWT_REFRESH_SECRET, { expiresIn: '7d' })
+}
+
+export function verifyAccessToken(token: string): JwtPayload {
+  try {
+    return jwt.verify(token, env.JWT_ACCESS_SECRET) as JwtPayload
+  } catch {
+    throw new UnauthorizedError('Invalid or expired token')
+  }
+}
+```
+
+---
+
+## 13. MongoDB Transactions
+
+- ALWAYS use Mongoose sessions for operations that touch multiple collections.
+- NEVER rely on application-level rollback — use MongoDB sessions for atomicity.
+- ALWAYS abort the session in the catch block.
+- NOTE: MongoDB transactions require a **Replica Set** or **MongoDB Atlas** (not standalone).
+
+```typescript
+// Example: create order and decrement inventory atomically
+import mongoose from 'mongoose'
+import { dbConnect } from '@/server/lib/db'
+
+export async function createOrderWithInventory(orderData: CreateOrderDto) {
+  await dbConnect()
+  const session = await mongoose.startSession()
+
+  try {
+    session.startTransaction()
+
+    const order = await OrderModel.create([orderData], { session })
+    await InventoryModel.findByIdAndUpdate(
+      orderData.itemId,
+      { $inc: { stock: -orderData.quantity } },
+      { session, new: true }
+    )
+
+    await session.commitTransaction()
+    return order[0]
+  } catch (error) {
+    await session.abortTransaction()
+    throw error
+  } finally {
+    session.endSession()
+  }
+}
+```
+
+---
+
+## 14. Caching Strategy
+
+- In Next.js 15, GET handlers are dynamic (uncached) by default.
+- ALWAYS use `export const revalidate = N` for cacheable public GET routes.
+- ALWAYS use `export const dynamic = 'force-dynamic'` for user-specific or auth-required routes.
+- ALWAYS use Redis for application-level caching. Use `_id.toString()` as part of cache keys.
+- ALWAYS use `revalidateTag()` / `revalidatePath()` after mutations to bust Next.js cache.
+- Cache key convention: `{domain}:{entity}:{identifier}` (e.g., `users:profile:64abc123`)
+
+```typescript
+// app/api/v1/products/route.ts — public, cacheable
+export const runtime = 'nodejs'
+export const revalidate = 60
+
+// app/api/v1/users/me/route.ts — user-specific, never cache
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+// server/lib/redis.ts
+import { Redis } from 'ioredis'
+import { env } from '@/config/env'
+
+declare global { var redis: Redis | undefined }
+
+export const redis: Redis =
+  global.redis ?? new Redis(env.REDIS_URL, { maxRetriesPerRequest: 3, lazyConnect: true })
+
+if (process.env.NODE_ENV !== 'production') global.redis = redis
+
+export async function withCache<T>(
+  key: string,
+  ttlSeconds: number,
+  fn: () => Promise<T>
+): Promise<T> {
+  const cached = await redis.get(key)
+  if (cached) return JSON.parse(cached) as T
+  const data = await fn()
+  await redis.setex(key, ttlSeconds, JSON.stringify(data))
+  return data
+}
+
+export async function invalidateCache(key: string): Promise<void> {
+  await redis.del(key)
+}
+```
+
+---
+
+## 15. Rate Limiting
+
+- ALWAYS use Redis-backed rate limiting — in-memory limits fail in serverless.
+- ALWAYS use IP-based limiting for public routes, user-based for authenticated routes.
+
+```typescript
+// server/api/middleware/rateLimit.ts
+import { redis } from '@/server/lib/redis'
+import { HttpError } from '@/server/api/errors'
+import { type NextRequest } from 'next/server'
+
+interface RateLimitOptions {
+  windowMs: number
+  max: number
+  keyPrefix?: string
+}
+
+export function rateLimit({ windowMs, max, keyPrefix = 'rl' }: RateLimitOptions) {
+  return async (req: NextRequest): Promise<void> => {
+    const ip =
+      req.headers.get('x-forwarded-for')?.split(',')[0].trim() ??
+      req.headers.get('x-real-ip') ??
+      'unknown'
+
+    const key = `${keyPrefix}:${ip}`
+    const windowSeconds = Math.floor(windowMs / 1000)
+
+    const count = await redis.incr(key)
+    if (count === 1) await redis.expire(key, windowSeconds)
+
+    if (count > max)
+      throw new HttpError(429, 'Too many requests. Please try again later.', 'RATE_LIMITED')
+  }
+}
+
+// Usage — strict limit on auth endpoints
+export const POST = withApiHandler(
+  async (req) => { /* login logic */ },
+  {
+    middleware: [
+      rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyPrefix: 'rl:login' }),
+    ]
+  }
+)
+```
+
+---
+
+## 16. Webhooks
+
+- ALWAYS verify the webhook signature with the raw body BEFORE processing.
+- ALWAYS use `req.text()` — never `req.json()` for webhooks (signature verification needs raw bytes).
+- ALWAYS respond 200 immediately and process async.
+- ALWAYS use `export const dynamic = 'force-dynamic'` on webhook routes.
+
+```typescript
+// app/api/v1/webhooks/stripe/route.ts
+import Stripe from 'stripe'
+import { stripe } from '@/server/lib/stripe'
+import { env } from '@/config/env'
+import { apiSuccess, apiError } from '@/server/api/response'
+import { logger } from '@/server/lib/logger'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+export async function POST(req: Request) {
+  const body = await req.text()
+  const signature = req.headers.get('stripe-signature')
+
+  if (!signature) return apiError('Missing signature', 400, 'MISSING_SIGNATURE')
+
+  let event: Stripe.Event
+  try {
+    event = stripe.webhooks.constructEvent(body, signature, env.STRIPE_WEBHOOK_SECRET)
+  } catch {
+    return apiError('Invalid signature', 400, 'INVALID_SIGNATURE')
+  }
+
+  // Respond immediately, process async
+  processStripeEvent(event).catch((err) =>
+    logger.error({ err, eventId: event.id, type: event.type }, 'Stripe webhook failed')
+  )
+
+  return apiSuccess({ received: true })
+}
+```
+
+---
+
+## 17. CORS
+
+- ALWAYS configure CORS globally in `middleware.ts`. Never per-handler.
+- ALWAYS use an explicit origin allowlist from env vars.
+- ALWAYS handle `OPTIONS` preflight in middleware.
+
+```typescript
+// middleware.ts
+import { type NextRequest, NextResponse } from 'next/server'
+import { env } from '@/config/env'
+
+const ALLOWED_ORIGINS = env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+
+export function middleware(req: NextRequest) {
+  const origin = req.headers.get('origin') ?? ''
+  const isAllowed = ALLOWED_ORIGINS.includes(origin)
+
+  if (req.method === 'OPTIONS') {
+    return new NextResponse(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': isAllowed ? origin : '',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Credentials': 'true',
+        'Access-Control-Max-Age': '86400',
+      },
+    })
+  }
+
+  const response = NextResponse.next()
+  if (isAllowed) {
+    response.headers.set('Access-Control-Allow-Origin', origin)
+    response.headers.set('Access-Control-Allow-Credentials', 'true')
+  }
+  return response
+}
+
+export const config = { matcher: '/api/:path*' }
+```
+
+---
+
+## 18. Security Headers
+
+```typescript
+// next.config.ts
+const securityHeaders = [
+  { key: 'X-DNS-Prefetch-Control', value: 'on' },
+  { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+]
+
+export default {
+  async headers() {
+    return [{ source: '/(.*)', headers: securityHeaders }]
+  },
+}
+```
+
+---
+
+## 19. Logging & Observability
+
+- ALWAYS use Pino. NEVER use `console.log` in production.
+- ALWAYS redact sensitive fields: `password`, `token`, `authorization`, `cookie`.
+- NEVER log raw MongoDB documents that contain `password` or `refreshToken`.
+- ALWAYS expose `/api/health` for uptime monitoring.
+
+```typescript
+// server/lib/logger.ts
+import pino from 'pino'
+import { env } from '@/config/env'
+
+export const logger = pino({
+  level: env.LOG_LEVEL,
+  redact: [
+    'body.password',
+    'body.token',
+    'body.refreshToken',
+    'headers.authorization',
+    'headers.cookie',
+  ],
+  ...(env.NODE_ENV !== 'production' && {
+    transport: { target: 'pino-pretty', options: { colorize: true } },
+  }),
+})
+
+// app/api/health/route.ts
+export const runtime = 'nodejs'
+
+export async function GET() {
+  return Response.json({
+    success: true,
+    data: {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      version: process.env.npm_package_version,
+    },
+  })
+}
+```
+
+---
+
+## 20. Environment Variables
+
+```typescript
+// config/env.ts
+import { z } from 'zod'
+
+const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']),
+  MONGODB_URI: z.string().url('MONGODB_URI must be a valid MongoDB connection string'),
+  REDIS_URL: z.string().url(),
+  JWT_ACCESS_SECRET: z.string().min(32, 'JWT_ACCESS_SECRET must be at least 32 chars'),
+  JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be at least 32 chars'),
+  ALLOWED_ORIGINS: z.string(),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug']).default('info'),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  NEXT_PUBLIC_API_URL: z.string().url(),
+})
+
+export const env = envSchema.parse(process.env)
+export type Env = z.infer<typeof envSchema>
+```
+
+`.env.example`:
+```
+NODE_ENV=development
+MONGODB_URI=mongodb+srv://<user>:<password>@cluster.mongodb.net/mydb?retryWrites=true&w=majority
+REDIS_URL=redis://localhost:6379
+JWT_ACCESS_SECRET=your-access-secret-minimum-32-characters
+JWT_REFRESH_SECRET=your-refresh-secret-minimum-32-characters
+ALLOWED_ORIGINS=http://localhost:3000
+LOG_LEVEL=info
+NEXT_PUBLIC_API_URL=http://localhost:3000
+```
+
+---
+
+## 21. API Design Conventions
+
+- ALWAYS version APIs: `/api/v1/...`
+- ALWAYS use nouns, not verbs: `/users` not `/getUsers`
+- ALWAYS return MongoDB `_id` as `id` (string) — never expose raw `_id` or `__v`
+- ALWAYS paginate list endpoints: `?page=1&limit=20`
+- ALWAYS validate MongoDB ObjectId params with `objectIdSchema` before querying
+- ALWAYS use correct HTTP status codes:
+  - `200` OK, `201` Created, `204` No Content
+  - `400` Bad Request, `401` Unauthorized, `403` Forbidden
+  - `404` Not Found, `409` Conflict, `422` Unprocessable Entity
+  - `429` Too Many Requests, `500` Internal Server Error
+- NEVER return `200` for errors
+
+---
+
+## 22. Testing
+
+- ALWAYS use `vitest` for unit and integration tests.
+- ALWAYS use `mongodb-memory-server` for integration tests — never hit Atlas in tests.
+- ALWAYS mock repositories in unit tests for services.
+- ALWAYS reset the in-memory database between tests with `beforeEach`.
+- ALWAYS mock Redis in unit tests.
+- Aim for >80% coverage on services and repositories.
+
+```typescript
+// server/services/users.service.test.ts
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { userService } from './users.service'
+import { userRepository } from '@/server/repositories/users.repository'
+import { NotFoundError, ConflictError } from '@/server/api/errors'
+
+vi.mock('@/server/repositories/users.repository')
+
+describe('userService', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('throws NotFoundError when user does not exist', async () => {
+    vi.mocked(userRepository.findById).mockResolvedValue(null)
+    await expect(userService.getById('64abc1234567890123456789')).rejects.toThrow(NotFoundError)
+  })
+
+  it('throws ConflictError when email already exists', async () => {
+    vi.mocked(userRepository.findByEmail).mockResolvedValue({ id: '1' } as any)
+    await expect(
+      userService.create({ email: 'a@b.com', name: 'Test', password: 'pass1234' })
+    ).rejects.toThrow(ConflictError)
+  })
+})
+
+// server/repositories/users.repository.test.ts — integration test with in-memory MongoDB
+import { MongoMemoryServer } from 'mongodb-memory-server'
+import mongoose from 'mongoose'
+import { userRepository } from './users.repository'
+
+let mongod: MongoMemoryServer
+
+beforeAll(async () => {
+  mongod = await MongoMemoryServer.create()
+  await mongoose.connect(mongod.getUri())
+})
+
+afterAll(async () => {
+  await mongoose.disconnect()
+  await mongod.stop()
+})
+
+afterEach(async () => {
+  await mongoose.connection.dropDatabase()
+})
+```
+
+---
+
+## 23. MongoDB-Specific Best Practices
+
+- ALWAYS use `mongoose.Types.ObjectId.isValid(id)` before querying by ID — invalid IDs cause Mongoose to throw, not return null.
+- ALWAYS use `$set` in update operations to avoid accidentally wiping unmentioned fields.
+- ALWAYS use `.lean()` for read-only queries — it returns plain JS objects, skipping Mongoose overhead.
+- NEVER use `Model.find({})` without a `.limit()` — always paginate.
+- ALWAYS define indexes for every field used in `find`, `sort`, or `populate` queries.
+- ALWAYS use `{ runValidators: true }` on `findByIdAndUpdate` to enforce schema validation on updates.
+- NEVER use `mongoose.set('strictQuery', false)` in production — keep strict mode on.
+- ALWAYS handle duplicate key errors (`code 11000`) in repositories and convert to `ConflictError`.
+- PREFER embedding over referencing for data that is always read together (e.g., address inside user).
+- PREFER referencing over embedding for data that grows unbounded (e.g., posts by a user).
+- ALWAYS use `populate()` sparingly — prefer denormalization for frequently-read data.

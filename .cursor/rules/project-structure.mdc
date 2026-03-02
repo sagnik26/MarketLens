@@ -1,0 +1,111 @@
+---
+description: MarketLens src layout, path aliases, and where to add routes, components, API, and server code
+globs:
+alwaysApply: false
+---
+
+# MarketLens Project Structure
+
+## Path aliases
+
+- **`@/*`** → `src/*` (e.g. `@/components/...`, `@/lib/utils`, `@/actions/...`)
+- **`@/server/*`** → `src/server/*` (e.g. `@/server/services/...`, `@/server/api/...`)
+
+Use these in imports; avoid relative paths that cross major boundaries.
+
+---
+
+## High-level layout
+
+```
+src/
+├── app/                    # Next.js App Router (routes + layouts)
+├── components/             # UI: features, ui, common
+├── actions/                # Server Actions ('use server')
+├── server/                 # Backend-only (services, repos, models, api helpers)
+├── lib/                    # Shared frontend utils (e.g. cn)
+├── config/                 # Env and app config
+├── types/                  # Shared TS types
+├── constants/              # App constants
+├── hooks/                  # Shared React hooks
+├── stores/                 # Zustand (client state)
+└── middleware.ts           # Next.js middleware
+```
+
+**Rule:** Route Handlers in `app/api/` and Server Actions in `actions/` call into `server/`. Client components and pages only import from `app/`, `components/`, `actions/`, `lib/utils`, `types/`, `config/`, `hooks/`, `stores/` — not from `server/` directly.
+
+---
+
+## app/ (App Router)
+
+- **`app/page.tsx`** — Landing (marketing). Root `/`.
+- **`app/layout.tsx`** — Root layout (html, body, globals).
+- **`app/(auth)/`** — Route group (no URL segment). e.g. `(auth)/login` → `/login`.
+- **`app/dashboard/`** — Dashboard segment. `/dashboard` = Overview; layout wraps sidebar + main.
+- **`app/dashboard/actions/`** — Actions hub. `/dashboard/actions`, `/dashboard/actions/competitor-radar`, `/dashboard/actions/compliance`.
+- **`app/dashboard/status`**, **information**, **insights** — Other dashboard pages.
+- **`app/api/`** — Route Handlers only. `api/health`, `api/v1/auth/...`, `api/v1/users/...`, `api/v1/scan/run`, `api/v1/compliance`, `api/v1/webhooks/stripe`.
+
+Add new pages under the correct segment (e.g. new dashboard page under `app/dashboard/`). Use route groups like `(auth)` only when you want a shared layout without adding a path segment.
+
+---
+
+## components/
+
+- **`components/ui/`** — Aceternity (`aceternity/`), primitives, shadcn. Reusable UI building blocks.
+- **`components/features/`** — Feature-specific UI and hooks:
+  - **`competitor-radar/`** — CompetitorRadarView, CompetitorManageView, cards, feed, modals, types.
+  - **`compliance-radar/`** — Compliance UI (e.g. CircularFeed, CircularCard).
+  - **`dashboard/`** — DashboardNav (sidebar with nested Actions), other dashboard widgets.
+  - **`landing/`** — LandingHero, LandingFeatures, LandingNav.
+  - **`integrations/`** — Jira, Linear, RuleBuilder.
+- **`components/common/`** — Shared composite components.
+
+Prefer one primary component per file; co-locate feature types/hooks in the same feature folder.
+
+---
+
+## actions/
+
+Server Actions only (`'use server'`). One file per domain (e.g. `competitor.actions.ts`, `scan.actions.ts`, `users.actions.ts`). They call `@/server/services/...` or `@/server/repositories/...`; never put DB or heavy logic in the action file itself.
+
+---
+
+## server/ (backend-only)
+
+- **`server/api/`** — Route handler wrapper, HTTP errors, response helpers, middleware (auth, rateLimit, validate).
+- **`server/lib/`** — db, redis, logger, auth, tinyfish client and goals.
+- **`server/services/`** — Business logic (scan, change-detection, enrichment, action, users, auth, email).
+- **`server/repositories/`** — DB access (Mongoose); used by services.
+- **`server/models/`** — Mongoose schemas/models.
+
+Route Handlers live under `app/api/` and import from `@/server/...`. Do not import `server/` from client components or from `lib/` (except shared `lib/utils` etc. used by both).
+
+---
+
+## lib/, config/, types/, constants/, hooks/, stores/
+
+- **`lib/`** — Currently `utils.ts` (e.g. `cn()`). Shared, non-server-only helpers used by components.
+- **`config/`** — Env and app config (e.g. Zod-validated env).
+- **`types/`** — Shared TypeScript types (e.g. `actions.types.ts`).
+- **`constants/`** — App-wide constants.
+- **`hooks/`** — Shared React hooks.
+- **`stores/`** — Zustand stores (client-only state).
+
+Keep these free of server-only code; they are part of the frontend-safe surface.
+
+---
+
+## Where to put new code
+
+| What you're adding              | Place in |
+|----------------------------------|----------|
+| New page/route                   | `app/<segment>/page.tsx` (or under `dashboard/`, `(auth)/`, etc.) |
+| New API endpoint                 | `app/api/v1/.../route.ts` |
+| New reusable UI piece            | `components/ui/` (aceternity, primitives, shadcn) |
+| New feature UI + state           | `components/features/<feature-name>/` |
+| New Server Action                | `actions/<domain>.actions.ts` |
+| New business logic               | `server/services/` |
+| New DB access                    | `server/repositories/` + `server/models/` if needed |
+| New shared type                  | `types/` or next to feature in `components/features/...` |
+| New shared util (non-server)     | `lib/` (e.g. `lib/utils.ts`) |

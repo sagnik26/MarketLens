@@ -1,0 +1,670 @@
+---
+description: Production-grade rules for scalable Next.js 15 frontend applications
+globs: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.css", "**/*.json"]
+alwaysApply: true
+---
+
+# Next.js 15 Frontend — Production Cursor Rules
+
+You are an expert in TypeScript, Node.js, React 19, Next.js 15 App Router, Aceternity UI, Radix Primitives, Tailwind CSS, Framer Motion, Zod, and TanStack Query.
+
+---
+
+## 1. Project Architecture
+
+Frontend and shared code live under `src/`. Backend-only code lives under `src/server/` (see [nextjs-api-backend-rules.mdc](.cursor/rules/nextjs-api-backend-rules.mdc)).
+
+```
+src/
+├── app/                          # Next.js App Router (pages, layouts, api routes)
+│   ├── (auth)/                   # Route groups
+│   ├── (dashboard)/
+│   ├── api/                      # API Route Handlers — import from @/server/...
+│   ├── error.tsx                 # Segment-level error boundary
+│   ├── global-error.tsx          # Root-level error boundary
+│   ├── not-found.tsx
+│   ├── layout.tsx
+│   └── globals.css
+├── components/
+│   ├── ui/                       # Aceternity UI + Radix primitives + shadcn
+│   │   ├── aceternity/
+│   │   ├── primitives/
+│   │   └── shadcn/
+│   ├── common/                   # Shared composite components
+│   └── features/                 # Feature-specific components, hooks, types co-located
+│       └── competitor-radar/     # e.g. CompetitorCard.tsx, ScanProgress.tsx, index.ts
+├── hooks/                        # Shared custom React hooks
+├── lib/                          # Shared only — no server-only code here
+│   ├── utils.ts                  # cn(), formatters, shared helpers
+│   └── validations/              # Shared Zod schemas (forms, API validation types)
+├── actions/                      # Next.js Server Actions — call @/server/services/...
+│   └── users.actions.ts
+├── stores/                       # Zustand (client-only state; not server data cache)
+│   └── auth.store.ts
+├── types/                        # Global TypeScript interfaces and types
+├── constants/                    # App-wide constants and const maps
+├── config/
+│   └── env.ts                    # Zod-validated environment variables (shared)
+├── middleware.ts                 # Route protection, auth checks
+└── server/                       # Backend-only — see nextjs-api-backend-rules
+```
+
+- ALWAYS follow this directory structure.
+- NEVER put business logic in page, layout, or component files. Call `@/server/services/...` from Server Actions or RSCs.
+- NEVER import from `src/server/` in client components (no `'use client'` file may import server code).
+- ALWAYS co-locate feature-specific components, hooks, and types inside `components/features/<feature-name>/`.
+- NEVER create REST API routes when a Server Action is sufficient.
+- Use lowercase with dashes for all directories (e.g., `components/auth-wizard`).
+
+---
+
+## 2. TypeScript
+
+- ALWAYS enable strict TypeScript: `"strict": true`, `"noUncheckedIndexedAccess": true`.
+- NEVER use `any`. Use `unknown` with type guards, or define explicit interfaces.
+- ALWAYS prefer `interface` over `type` for object shapes and component props.
+- Use `type` only for unions, intersections, and aliases.
+- NEVER use enums. Use `const` maps instead.
+- ALWAYS export types/interfaces from a `types.ts` barrel file per feature.
+- NEVER use `// @ts-ignore`. Use `// @ts-expect-error` with an explanatory comment.
+- ALWAYS use the `satisfies` operator for config objects to preserve narrow types.
+- Do NOT use default exports anywhere. ALWAYS use named exports.
+
+```typescript
+// ✅ Good
+export interface UserCardProps {
+  user: User
+  onSelect: (id: string) => void
+  isLoading?: boolean
+}
+
+// ✅ Good — const map instead of enum
+export const UserRole = {
+  ADMIN: 'admin',
+  MEMBER: 'member',
+  GUEST: 'guest',
+} as const
+export type UserRole = typeof UserRole[keyof typeof UserRole]
+
+// ❌ Bad
+enum UserRole { ADMIN, MEMBER }
+const UserCard = ({ user }: { user: any }) => {}
+```
+
+---
+
+## 3. Component Standards
+
+- ALWAYS use the `function` keyword for components. NEVER use `const` arrow functions for components.
+- ALWAYS use named exports. NEVER use default exports.
+- ALWAYS destructure props at the function signature level.
+- ALWAYS place static content and interfaces at the bottom of the file.
+- Use content variables for static content defined outside render functions.
+- NEVER use class components. Use functional components only.
+- Limit each file to one primary exported component. Sub-components may live in the same file only if they are never reused elsewhere.
+- Use `React.memo` for pure components that receive stable, frequently-changing props.
+- ALWAYS set `displayName` on components using `forwardRef` or HOCs.
+- ALWAYS use declarative JSX. No imperative DOM manipulation.
+
+```typescript
+// ✅ Good
+export function UserCard({ user, onSelect, isLoading = false }: UserCardProps) {
+  if (isLoading) return <UserCardSkeleton />
+
+  return (
+    <div className={cn('rounded-lg p-4', !user.isActive && 'opacity-50')}>
+      <p>{user.name}</p>
+    </div>
+  )
+}
+
+// Static content and interfaces at the bottom
+const CARD_ARIA_LABEL = 'User profile card'
+
+interface UserCardProps {
+  user: User
+  onSelect: (id: string) => void
+  isLoading?: boolean
+}
+```
+
+---
+
+## 4. File & Naming Conventions
+
+- Component files: `PascalCase.tsx` (e.g., `UserCard.tsx`)
+- Hook files: `camelCase.ts` prefixed with `use` (e.g., `useUserProfile.ts`)
+- Server Action files: `camelCase.actions.ts` (e.g., `users.actions.ts`)
+- Service files: `camelCase.service.ts` (e.g., `users.service.ts`)
+- Store files: `camelCase.store.ts` (e.g., `auth.store.ts`)
+- Utility files: `camelCase.ts` (e.g., `formatDate.ts`)
+- Type files: `camelCase.types.ts` or `types.ts`
+- Test files: `*.test.ts` / `*.spec.ts` co-located with source files
+- Constants: `SCREAMING_SNAKE_CASE` for values
+- All directories: `lowercase-with-dashes`
+
+---
+
+## 5. Aceternity UI — Usage Rules
+
+Aceternity UI (https://ui.aceternity.com) is the primary UI library for animations, visual effects, and interactive components. It is built on top of Tailwind CSS and Framer Motion.
+
+### Installation
+```bash
+# Install dependencies
+npm install framer-motion clsx tailwind-merge
+
+# Add Aceternity component via CLI (preferred)
+npx aceternity-ui add <component-name>
+
+# Or manually copy from https://ui.aceternity.com/components into src/components/ui/aceternity/
+```
+
+### When to Use Aceternity UI
+
+- ALWAYS use Aceternity UI for hero sections, landing page backgrounds, and marketing UI.
+- ALWAYS use Aceternity UI for animated text effects, card effects, and visual flourishes.
+- PREFER Aceternity UI over hand-rolling custom Framer Motion animations.
+- NEVER use Aceternity UI for functional form inputs, data tables, or complex accessibility-critical components (use Radix Primitives instead).
+
+### Component Categories & What to Use
+
+| Use Case | Aceternity Component |
+|---|---|
+| Hero backgrounds | `AuroraBackground`, `BackgroundBeams`, `Spotlight`, `WavyBackground`, `Vortex` |
+| Hero text effects | `TextGenerateEffect`, `TypewriterEffect`, `FlipWords`, `ColourfulText` |
+| Card effects | `3DCardEffect`, `CardHoverEffect`, `GlareCard`, `WobbleCard`, `CardSpotlight` |
+| Scroll animations | `TracingBeam`, `StickyScrollReveal`, `HeroParallax`, `MacbookScroll` |
+| Navigation | `FloatingNavbar`, `FloatingDock`, `Sidebar` |
+| Loaders | `MultiStepLoader`, `Loader` |
+| Layout sections | `BentoGrid`, `LayoutGrid`, `Timeline` |
+| Testimonials | `AnimatedTestimonials`, `InfiniteMovingCards`, `CardStack` |
+| Buttons | `MovingBorder`, `HoverBorderGradient` |
+| Decorative | `Sparkles`, `Meteors`, `ShootingStars`, `GlowingStars` |
+
+### Rules for Using Aceternity Components
+
+- ALWAYS copy Aceternity components into `src/components/ui/aceternity/`. Never import directly from an npm package (Aceternity UI is copy-paste based).
+- ALWAYS keep each Aceternity component in its own file: e.g., `src/components/ui/aceternity/aurora-background.tsx`.
+- ALWAYS preserve the original component's TypeScript interfaces. Extend via wrapper components, never modify the source directly.
+- ALWAYS add `'use client'` to Aceternity components since they use Framer Motion and browser APIs.
+- NEVER use Aceternity background/animation components as Server Components.
+- ALWAYS wrap Aceternity animation components in `next/dynamic` with `ssr: false` when used inside Server Component pages, to avoid hydration issues.
+- ALWAYS test Aceternity components for performance impact. Heavy canvas or WebGL components (e.g., `GithubGlobe`, `CanvasRevealEffect`) MUST be lazy-loaded with `next/dynamic`.
+
+```typescript
+// ✅ Good — lazy load heavy Aceternity components
+import dynamic from 'next/dynamic'
+
+const BackgroundBeams = dynamic(
+  () => import('@/components/ui/aceternity/background-beams').then(m => ({ default: m.BackgroundBeams })),
+  { ssr: false, loading: () => <div className="absolute inset-0 bg-background" /> }
+)
+
+// ✅ Good — wrapper pattern for customization
+import { SparklesCore } from '@/components/ui/aceternity/sparkles'
+
+export function HeroSparkles({ className }: { className?: string }) {
+  return (
+    <SparklesCore
+      background="transparent"
+      minSize={0.4}
+      maxSize={1}
+      particleDensity={1200}
+      className={cn('w-full h-full', className)}
+      particleColor="#FFFFFF"
+    />
+  )
+}
+```
+
+### Aceternity + Framer Motion Rules
+
+- ALWAYS import Framer Motion from `'framer-motion'` directly in Aceternity component files.
+- NEVER use `motion` components outside of `'use client'` files.
+- ALWAYS use `useReducedMotion()` from Framer Motion to respect accessibility preferences for heavy animations.
+- For entrance animations, prefer `initial`, `animate`, `exit` over imperative animation controls.
+- ALWAYS use `layoutId` for shared layout animations (e.g., tabs, modals).
+
+```typescript
+'use client'
+
+import { motion, useReducedMotion } from 'framer-motion'
+
+export function AnimatedCard({ children }: { children: React.ReactNode }) {
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <motion.div
+      initial={shouldReduceMotion ? false : { opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: 'easeOut' }}
+    >
+      {children}
+    </motion.div>
+  )
+}
+```
+
+---
+
+## 6. Radix Primitives — Usage Rules
+
+- ALWAYS use Radix Primitives for accessibility-critical interactive components: `Dialog`, `DropdownMenu`, `Select`, `Popover`, `Tooltip`, `Tabs`, `Accordion`, `Switch`, `Checkbox`, `RadioGroup`.
+- NEVER re-implement these from scratch. Radix handles ARIA, keyboard navigation, and focus management.
+- Style Radix Primitives with Tailwind CSS classes. Do NOT use Radix's built-in styles.
+- ALWAYS compose Radix Primitives at the `src/components/ui/primitives/` level, then consume the composed version in features.
+
+```typescript
+// src/components/ui/primitives/Dialog.tsx
+'use client'
+
+import * as DialogPrimitive from '@radix-ui/react-dialog'
+import { cn } from '@/lib/utils'
+
+export function Dialog({ children, ...props }: DialogPrimitive.DialogProps) {
+  return <DialogPrimitive.Root {...props}>{children}</DialogPrimitive.Root>
+}
+
+export function DialogContent({ className, children, ...props }: DialogPrimitive.DialogContentProps) {
+  return (
+    <DialogPrimitive.Portal>
+      <DialogPrimitive.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
+      <DialogPrimitive.Content
+        className={cn(
+          'fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2',
+          'bg-background rounded-xl shadow-xl p-6 w-full max-w-lg',
+          className
+        )}
+        {...props}
+      >
+        {children}
+      </DialogPrimitive.Content>
+    </DialogPrimitive.Portal>
+  )
+}
+```
+
+---
+
+## 7. React Server Components (RSC) — Default
+
+- DEFAULT to React Server Components. Only add `'use client'` when truly necessary.
+- Use `'use client'` ONLY for:
+  - Browser-only APIs (`window`, `navigator`, `localStorage`)
+  - Interactive UI requiring local state or event handlers
+  - Components using Framer Motion (`motion.*`) or Aceternity UI animations
+  - Components using `useEffect`, `useState`, `useReducer`
+- NEVER use `'use client'` for data fetching or global state management.
+- NEVER use TanStack Query for data that can be fetched in a Server Component.
+- Use `<Suspense>` boundaries with meaningful skeleton fallbacks for async RSCs.
+- Use `loading.tsx` for route-level loading states.
+- Prefer streaming and Server Components over client-side loading spinners.
+
+```typescript
+// ✅ Good — Server Component fetches data directly
+export async function UserProfilePage({ params }: { params: { id: string } }) {
+  const user = await userService.getById(params.id)
+  return <UserProfile user={user} />
+}
+```
+
+---
+
+## 8. Server Actions
+
+- ALWAYS use native Next.js Server Actions with `'use server'`.
+- ALWAYS validate input with Zod `safeParse` inside every Server Action.
+- NEVER use `try/catch` for expected validation errors. Return structured error objects instead.
+- ALWAYS return a consistent `ActionResponse<T>` shape from every action.
+- Throw ONLY for unexpected/unrecoverable errors (caught by error boundaries).
+- ALWAYS use `useActionState` in client components to handle Server Action responses.
+- Use Server Actions for ALL mutations. NEVER create REST endpoints when an action suffices.
+- Code in `services/` MUST throw user-friendly errors that actions can surface to the UI.
+
+```typescript
+// types/actions.types.ts
+export interface ActionResponse<T = unknown> {
+  success: boolean
+  data?: T
+  error?: string
+  fieldErrors?: Record<string, string[]>
+}
+
+// actions/users.actions.ts
+'use server'
+
+import { z } from 'zod'
+import { userService } from '@/services/users.service'
+import type { ActionResponse } from '@/types/actions.types'
+
+const createUserSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  name: z.string().min(2, 'Name must be at least 2 characters'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+})
+
+export async function createUserAction(
+  formData: FormData
+): Promise<ActionResponse<User>> {
+  const parsed = createUserSchema.safeParse(Object.fromEntries(formData))
+
+  if (!parsed.success)
+    return {
+      success: false,
+      error: 'Validation failed',
+      fieldErrors: parsed.error.flatten().fieldErrors,
+    }
+
+  const user = await userService.create(parsed.data)
+  return { success: true, data: user }
+}
+```
+
+---
+
+## 9. Data Fetching Strategy
+
+Follow this decision tree strictly:
+
+```
+Is the data server-owned and needed at render time?
+  → YES: Fetch in a React Server Component directly (async RSC)
+      → Is it a mutation?
+          → YES: Use a Server Action
+          → NO:  Fetch directly in the async RSC
+
+Is the data client-only? (real-time, polling, WebSocket, background refetch)
+  → YES: Use TanStack Query in a Client Component
+```
+
+- NEVER use TanStack Query for basic CRUD that Server Components or Server Actions can handle.
+- NEVER fetch server-owned data on the client side if a Server Component can do it.
+- ALWAYS define TanStack Query keys as constants in a `queryKeys.ts` file per domain.
+- ALWAYS set explicit `staleTime` values. Never rely on the default 0ms stale time.
+
+```typescript
+// lib/queryKeys.ts
+export const notificationKeys = {
+  all: ['notifications'] as const,
+  live: (userId: string) => [...notificationKeys.all, 'live', userId] as const,
+}
+
+// hooks/useLiveNotifications.ts — TanStack Query ONLY because it is real-time polling
+export function useLiveNotifications(userId: string) {
+  return useQuery({
+    queryKey: notificationKeys.live(userId),
+    queryFn: () => notificationService.getLive(userId),
+    staleTime: 30 * 1000,
+    refetchInterval: 30 * 1000,
+  })
+}
+```
+
+---
+
+## 10. State Management
+
+- Use React local state (`useState`) for UI-only, component-scoped state.
+- Use Zustand for global client state only (e.g., auth session UI, theme, feature flags).
+- NEVER use Zustand to cache or mirror server data. That is React Query's responsibility.
+- ALWAYS split Zustand stores by domain. One store per domain.
+- ALWAYS use the `immer` middleware for complex nested state mutations.
+- NEVER store derived state. Compute it with selectors or `useMemo`.
+- MINIMIZE `useEffect`. Prefer event handlers, Server Actions, and derived state over effects.
+
+```typescript
+// stores/auth.store.ts
+import { create } from 'zustand'
+import { immer } from 'zustand/middleware/immer'
+
+interface AuthState {
+  user: AuthUser | null
+  setUser: (user: AuthUser) => void
+  clearAuth: () => void
+}
+
+export const useAuthStore = create<AuthState>()(
+  immer((set) => ({
+    user: null,
+    setUser: (user) => set((state) => { state.user = user }),
+    clearAuth: () => set((state) => { state.user = null }),
+  }))
+)
+```
+
+---
+
+## 11. Forms
+
+- ALWAYS use React Hook Form for form state management.
+- ALWAYS integrate Zod via `@hookform/resolvers/zod`.
+- ALWAYS define Zod schemas in `lib/validations/` or co-located `*.schema.ts` files.
+- ALWAYS infer TypeScript types from Zod schemas with `z.infer<typeof schema>`.
+- NEVER manage form field state manually with `useState`.
+- For progressive enhancement, wire forms to Server Actions using `useActionState`.
+- For animated form fields, use Aceternity's `PlaceholdersAndVanishInput` or `SignupForm` as the base.
+
+```typescript
+// lib/validations/login.schema.ts
+export const loginSchema = z.object({
+  email: z.string().email('Invalid email'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+})
+export type LoginFormValues = z.infer<typeof loginSchema>
+```
+
+---
+
+## 12. Styling
+
+- Use Tailwind CSS as the primary styling solution.
+- ALWAYS use `cn()` (from `clsx` + `tailwind-merge`) for conditional class merging. NEVER string-concatenate class names.
+- NEVER use inline `style` props except for truly dynamic values not achievable with Tailwind (CSS custom properties).
+- Use `cva` (class-variance-authority) for component variant definitions.
+- ALWAYS implement responsive design with a mobile-first approach.
+- Use CSS variables via Tailwind's config for theming (colors, radius, spacing).
+
+```typescript
+// lib/utils.ts
+import { clsx, type ClassValue } from 'clsx'
+import { twMerge } from 'tailwind-merge'
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+
+// ✅ Good — cva for variants
+import { cva, type VariantProps } from 'class-variance-authority'
+
+const buttonVariants = cva(
+  'inline-flex items-center justify-center rounded-md font-medium transition-colors',
+  {
+    variants: {
+      variant: {
+        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+        outline: 'border border-input bg-transparent hover:bg-accent',
+        aceternity: 'relative overflow-hidden border border-white/20 bg-black text-white',
+      },
+      size: {
+        sm: 'h-8 px-3 text-sm',
+        md: 'h-10 px-4',
+        lg: 'h-12 px-6 text-lg',
+      },
+    },
+    defaultVariants: { variant: 'default', size: 'md' },
+  }
+)
+```
+
+---
+
+## 13. Error Handling
+
+- ALWAYS implement `error.tsx` at each route segment that needs isolated error recovery.
+- ALWAYS implement `global-error.tsx` at the root for unexpected top-level failures.
+- ALWAYS log unexpected errors to Sentry (or equivalent) inside error boundaries.
+- NEVER show raw error messages or stack traces to users in production.
+- Handle errors and edge cases at the TOP of functions using guard clauses and early returns.
+- Place the happy path LAST in the function for readability.
+- NEVER use `else` after an early `return`. Use the if-return pattern.
+- Model expected errors as structured return values (`ActionResponse`). Throw only for unexpected errors.
+
+```typescript
+// app/dashboard/error.tsx
+'use client'
+
+import { useEffect } from 'react'
+import { captureException } from '@sentry/nextjs'
+
+export default function DashboardError({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string }
+  reset: () => void
+}) {
+  useEffect(() => { captureException(error) }, [error])
+
+  return (
+    <div role="alert">
+      <h2>Something went wrong</h2>
+      <button onClick={reset}>Try again</button>
+    </div>
+  )
+}
+```
+
+---
+
+## 14. Authentication & Security
+
+- ALWAYS use NextAuth.js v5 (Auth.js) or a server-side session strategy.
+- NEVER store JWTs or tokens in `localStorage` or `sessionStorage`. Use httpOnly cookies.
+- ALWAYS protect routes in `middleware.ts` using route matchers.
+- ALWAYS validate and sanitize all inputs inside Server Actions with Zod. Never trust client input.
+- NEVER expose secrets or API keys via `NEXT_PUBLIC_` env variables.
+- ALWAYS validate all environment variables at startup using Zod in `config/env.ts`.
+- NEVER access `process.env` directly in components or hooks. Import only from `config/env.ts`.
+
+```typescript
+// config/env.ts
+const envSchema = z.object({
+  NEXT_PUBLIC_API_URL: z.string().url(),
+  AUTH_SECRET: z.string().min(32),
+  DATABASE_URL: z.string().url(),
+})
+export const env = envSchema.parse(process.env)
+```
+
+---
+
+## 15. Performance
+
+- ALWAYS use `next/image` for images. NEVER use raw `<img>` tags.
+- ALWAYS prefer WebP format and enable lazy loading on all below-fold images.
+- ALWAYS use `next/font` for fonts. NEVER load fonts via `<link>` tags.
+- ALWAYS lazy-load heavy Aceternity UI components (canvas, WebGL, heavy Framer Motion) with `next/dynamic` and `ssr: false`.
+- ALWAYS wrap stable callbacks passed to children with `useCallback`.
+- ALWAYS memoize expensive calculations with `useMemo`.
+- NEVER pass new object/array literals as props directly — it defeats memoization.
+- ALWAYS use `useReducedMotion()` from Framer Motion to disable heavy animations for users who prefer reduced motion.
+- Prioritize Web Vitals: LCP, CLS, INP. Aceternity animations should NEVER degrade LCP.
+
+```typescript
+// ✅ Good — lazy load Aceternity heavy components
+import dynamic from 'next/dynamic'
+
+const GithubGlobe = dynamic(
+  () => import('@/components/ui/aceternity/github-globe').then(m => ({ default: m.GithubGlobe })),
+  { ssr: false, loading: () => <GlobeSkeleton /> }
+)
+
+const CanvasRevealEffect = dynamic(
+  () => import('@/components/ui/aceternity/canvas-reveal-effect').then(m => ({ default: m.CanvasRevealEffect })),
+  { ssr: false }
+)
+```
+
+---
+
+## 16. Accessibility (a11y)
+
+- ALWAYS use semantic HTML (`nav`, `main`, `article`, `section`, `header`, `footer`).
+- ALWAYS add `aria-label`, `aria-describedby`, or `aria-live` where semantic HTML is insufficient.
+- ALWAYS ensure all interactive elements are keyboard-navigable with visible focus rings.
+- NEVER remove the default focus outline without providing a visible custom alternative.
+- ALWAYS use Radix Primitives for complex interactive components — they handle a11y by default.
+- ALWAYS respect `prefers-reduced-motion` for Aceternity/Framer Motion animations using `useReducedMotion()`.
+- ALWAYS test with axe-core in CI.
+
+```typescript
+// ✅ Good — respect reduced motion in Aceternity components
+'use client'
+import { useReducedMotion } from 'framer-motion'
+
+export function HeroSection() {
+  const shouldReduceMotion = useReducedMotion()
+
+  return (
+    <section>
+      {!shouldReduceMotion && <BackgroundBeams />}
+      <h1>Welcome</h1>
+    </section>
+  )
+}
+```
+
+---
+
+## 17. Code Quality & Patterns
+
+- ALWAYS use the **Receive an Object, Return an Object (RORO)** pattern for functions with multiple parameters.
+- ALWAYS use guard clauses. Handle errors and edge cases at the top of functions.
+- NEVER use `else` after an early `return`. Use the if-return pattern.
+- For single-line conditionals, omit curly braces: `if (condition) doSomething()`
+- NEVER write deeply nested `if` statements. Flatten with early returns.
+- Omit semicolons (configure Prettier accordingly).
+- ALWAYS write JSDoc comments for exported utility functions and service methods.
+- ALWAYS add a barrel `index.ts` for each major directory.
+- NEVER commit commented-out code. Use feature flags instead.
+- Max file length: 300 lines. Refactor if exceeded.
+- Max function length: 50 lines. Extract helpers if exceeded.
+- ALWAYS run ESLint with `eslint-config-next` and stricter custom rules.
+- ALWAYS use Prettier for formatting. No manual formatting.
+- ALWAYS use Husky + lint-staged for pre-commit hooks.
+
+---
+
+## 18. Testing
+
+- ALWAYS write unit tests for utilities, hooks, and services.
+- ALWAYS write integration tests for critical user flows using `@testing-library/react`.
+- Use `vitest` for unit tests and `@testing-library/react` for component tests.
+- ALWAYS mock external API calls and Server Actions in tests. NEVER hit real endpoints.
+- ALWAYS mock Framer Motion in tests to avoid animation-related test flakiness:
+  ```typescript
+  vi.mock('framer-motion', () => ({ motion: { div: 'div', span: 'span' }, AnimatePresence: ({ children }) => children }))
+  ```
+- Aim for >80% coverage on business-critical services and utilities.
+- Test file structure mirrors source file structure.
+
+---
+
+## 19. Observability
+
+- ALWAYS integrate Sentry for error tracking.
+- ALWAYS call `captureException` inside `error.tsx` and `global-error.tsx`.
+- ALWAYS log meaningful context (userId, route, action name) alongside errors.
+- NEVER log sensitive data (passwords, tokens, PII).
+- ALWAYS monitor Core Web Vitals — pay special attention to CLS and INP when using Aceternity animations.
+
+---
+
+## 20. Commit & PR Standards
+
+- Use Conventional Commits: `feat:`, `fix:`, `chore:`, `refactor:`, `docs:`, `test:`.
+- NEVER commit directly to `main`. Always use feature branches + PR reviews.
+- PR titles must follow Conventional Commits format.
+- ALWAYS run ESLint, Prettier, and `tsc --noEmit` in CI before merge.
+- ALWAYS link every PR to an issue or ticket.

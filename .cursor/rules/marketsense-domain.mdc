@@ -1,0 +1,447 @@
+---
+name: MarketSense-domain
+description: >
+  Domain context for the MarketSense AI PM intelligence platform.
+  Reference this for all business logic, data models, naming conventions,
+  and product-specific decisions. Gives Cursor the product knowledge to
+  generate accurate domain logic, correct entity names, and meaningful code.
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+alwaysApply: true
+---
+
+# MarketSense — Domain Context
+
+Source: MarketSense product specification and architecture decisions.
+Read this before generating any business logic, service, repository, or component file.
+
+---
+
+## WHAT THIS PRODUCT IS
+
+MarketSense is an AI Product Manager intelligence platform for B2B SaaS companies.
+Primary users are Product Managers and CPOs at B2B SaaS companies.
+
+The product watches the web for intelligence relevant to PM decisions —
+competitor moves, pricing changes, job signals, review patterns, compliance
+alerts — and surfaces it as structured, actionable insights with Jira/Linear
+integration.
+
+One-line pitch:
+"MarketSense doesn't just tell you what's happening in your market — it creates the
+work item in Jira, assigns it to the right person, and tracks whether your
+response actually worked."
+
+---
+
+## CORE MODULES — MVP
+
+### 1. Competitor Radar (Primary)
+
+Monitors competitor websites for strategic changes across:
+
+- Pricing pages — plan changes, tier additions, limit changes
+- Job postings — hiring signals that predict product direction 6-9 months ahead
+- Blog / changelog — feature announcements, positioning shifts
+- G2 / Capterra reviews — customer pain points in competitor products
+- Product Hunt — new entrants before they appear elsewhere
+- Features pages — capability additions and removals
+
+### 2. Compliance Radar (Secondary)
+
+Monitors BSE/NSE for regulatory circulars relevant to fintech/regulated verticals.
+Extends to any regulated vertical: healthcare, HR tech, legal tech.
+
+---
+
+## AGENT MODEL — CRITICAL RULES
+
+- TinyFish agents are MANUAL-FIRST
+- Users trigger scans on demand from the dashboard — never automatic by default
+- Automation is an opt-in setting, OFF by default in Settings
+- Every scan creates a ScanRun record: triggeredBy 'user' | 'automation'
+- NEVER write code that auto-triggers agents without explicit user action
+- NEVER set automation defaults to enabled
+
+---
+
+## MULTI-TENANCY — CRITICAL RULES
+
+- EVERY database query MUST filter by companyId
+- NEVER return data from one company to another company's session
+- companyId ALWAYS comes from the authenticated session — NEVER from request body
+- Add companyId filter as the FIRST condition in every Prisma where clause
+- Every service method that queries data MUST accept and use companyId
+
+```typescript
+// ✅ Correct — companyId from session, first in where
+const competitors = await db.competitor.findMany({
+  where: {
+    companyId: session.companyId, // Always first
+    isActive: true,
+  },
+});
+
+// ❌ Wrong — companyId from request body
+const { companyId } = await req.json(); // Never do this
+```
+
+---
+
+## CORE ENTITIES
+
+### Company
+
+The customer organisation using MarketSense. Root of all multi-tenant data.
+
+```
+id, name, plan, createdAt, updatedAt
+```
+
+### User
+
+A person belonging to a Company. Has a role within that company.
+
+```
+id, companyId, email, name, role (ADMIN | MEMBER), createdAt
+```
+
+### Competitor
+
+A company being monitored. Belongs to a Company.
+
+```
+id, companyId, name, website, logoUrl, isActive, createdAt, updatedAt
+```
+
+### CompetitorPage
+
+A specific URL being monitored for a Competitor.
+
+```
+id, competitorId, companyId, url, pageType, browserProfile,
+lastScannedAt, isActive, createdAt
+```
+
+### ScanRun
+
+One execution of TinyFish agents across a set of pages.
+Manual or automated. Always created before firing any agents.
+
+```
+id, companyId, competitorId, triggeredBy, triggeredByUserId,
+status, pageResults (JSON), newChangesCount,
+startedAt, completedAt, externalRunId (for async runs)
+```
+
+### Change
+
+A detected difference on a monitored page. Core intelligence unit.
+
+```
+id, companyId, competitorId, competitorPageId, scanRunId,
+changeType, signalType, priority, title, summary,
+rawExtracted (JSON), previousExtracted (JSON),
+contentHash, isRead, isDismissed, actionCreated,
+detectedAt, enrichedAt
+```
+
+### Insight
+
+AI-generated PM briefing synthesised from a batch of Changes.
+
+```
+id, companyId, competitorId, changeIds (array),
+title, briefing, recommendedActions (JSON),
+signalType, priority, generatedAt
+```
+
+### ActionItem
+
+A work item created from a Change or Insight, linked to an external tool.
+
+```
+id, companyId, changeId, insightId, userId,
+tool (JIRA | LINEAR | ASANA | NOTION),
+externalTicketId, externalTicketUrl, status,
+title, description, priority, assigneeId,
+createdAt, completedAt
+```
+
+### ComplianceAlert
+
+A detected BSE/NSE circular or regulatory notice.
+
+```
+id, companyId, title, circularNumber, category,
+publishedAt, sourceUrl, summary, isRead, detectedAt
+```
+
+### AutomationRule
+
+A user-configured rule for auto-creating work items from signals.
+
+```
+id, companyId, userId, name, isEnabled,
+triggerChangeType, triggerSignalType, triggerPriority,
+actionTool, actionProject, actionPriority, actionAssigneeId,
+notifySlackChannel, createdAt
+```
+
+---
+
+## DOMAIN VOCABULARY — USE THESE TERMS CONSISTENTLY
+
+| Term        | Definition                                     | Never use instead                |
+| ----------- | ---------------------------------------------- | -------------------------------- |
+| scan        | One execution of TinyFish agents               | "scrape", "crawl", "fetch"       |
+| change      | A detected difference on a monitored page      | "update", "alert", "event"       |
+| insight     | AI-generated strategic PM briefing             | "report", "summary", "analysis"  |
+| signal      | Strategic classification of a change           | "tag", "label", "category"       |
+| goal        | Natural language instruction given to TinyFish | "prompt", "query", "instruction" |
+| enrichment  | Gemini AI processing of raw extracted data     | "analysis", "processing"         |
+| action item | Work item created and linked to Jira/Linear    | "ticket", "task", "issue"        |
+| page        | A specific URL being monitored                 | "source", "target", "endpoint"   |
+| run         | Synonym for scan — one ScanRun execution       | "job", "process", "execution"    |
+
+---
+
+## CHANGE TYPES
+
+```typescript
+export const ChangeType = {
+  PRICING: "pricing", // Pricing page structural change
+  FEATURE_ADD: "feature_add", // New feature announced or launched
+  FEATURE_REMOVE: "feature_remove", // Feature removed or deprecated
+  MESSAGING: "messaging", // Positioning or copy shift
+  JOB_SIGNAL: "job_signal", // Hiring pattern predicting product direction
+  REVIEW_TREND: "review_trend", // Emerging pattern in customer reviews
+  CHANGELOG: "changelog", // Product changelog entry
+  CIRCULAR: "circular", // Compliance/regulatory circular
+  CUSTOM: "custom", // User-defined page type
+} as const;
+export type ChangeType = (typeof ChangeType)[keyof typeof ChangeType];
+```
+
+## SIGNAL TYPES
+
+```typescript
+export const SignalType = {
+  THREAT: "threat", // Competitor move that threatens your position
+  OPPORTUNITY: "opportunity", // Gap or weakness in competitor you can exploit
+  INFORMATIONAL: "informational", // Useful context, no immediate action needed
+  NOISE: "noise", // Detected but not strategically relevant
+} as const;
+export type SignalType = (typeof SignalType)[keyof typeof SignalType];
+```
+
+## PRIORITY LEVELS
+
+```typescript
+export const Priority = {
+  URGENT: "URGENT", // Needs PM attention today
+  HIGH: "HIGH", // Address this week
+  MEDIUM: "MEDIUM", // Address this sprint
+  LOW: "LOW", // FYI, no immediate action
+} as const;
+export type Priority = (typeof Priority)[keyof typeof Priority];
+```
+
+## PAGE TYPES
+
+```typescript
+export const PageType = {
+  PRICING: "pricing",
+  FEATURES: "features",
+  JOBS: "jobs",
+  BLOG: "blog",
+  REVIEWS: "reviews",
+  CHANGELOG: "changelog",
+  COMPLIANCE: "compliance",
+  CUSTOM: "custom",
+} as const;
+export type PageType = (typeof PageType)[keyof typeof PageType];
+```
+
+## SCAN RUN STATUSES
+
+```typescript
+export const ScanStatus = {
+  RUNNING: "running",
+  COMPLETED: "completed",
+  PARTIAL: "partial", // Some pages failed, some succeeded
+  FAILED: "failed", // All pages failed
+} as const;
+export type ScanStatus = (typeof ScanStatus)[keyof typeof ScanStatus];
+```
+
+## INTEGRATION TOOLS
+
+```typescript
+export const IntegrationTool = {
+  JIRA: "JIRA",
+  LINEAR: "LINEAR",
+  ASANA: "ASANA",
+  NOTION: "NOTION",
+  TRELLO: "TRELLO",
+} as const;
+export type IntegrationTool =
+  (typeof IntegrationTool)[keyof typeof IntegrationTool];
+```
+
+---
+
+## LAYERED SCAN PIPELINE — HOW DATA FLOWS
+
+```
+User clicks "Run Scan"
+        ↓
+POST /api/v1/scan/run
+        ↓
+scan.service.ts
+  → Creates ScanRun (status: running)
+  → Fires TinyFish agents in parallel (Promise.allSettled)
+        ↓
+lib/tinyfish/client.ts
+  → run-sse for manual scans
+  → run-async for automation mode
+        ↓
+change-detection.service.ts
+  → SHA-256 hash deduplication
+  → Compares to previous scan results
+  → Creates Change records for new detections
+        ↓
+enrichment.service.ts
+  → Gemini API enriches each Change
+  → Assigns signalType, priority, summary
+  → Generates recommended actions
+        ↓
+action.service.ts (if AutomationRule matches)
+  → Creates ActionItem
+  → Sends to Jira/Linear via Composio
+        ↓
+ScanRun updated (status: completed | partial | failed)
+        ↓
+Notification sent to user
+```
+
+---
+
+## CHANGE DETECTION RULES
+
+- Hash is SHA-256 of: `title + publishedAt + sourceUrl` (for compliance)
+- Hash is SHA-256 of: `planName + price + features` (for pricing)
+- NEVER store a Change if its hash already exists for that competitorPageId
+- ALWAYS store rawExtracted even if enrichment fails
+- ALWAYS store previousExtracted for diffing
+- Run enrichment AFTER change detection, not before
+
+---
+
+## GEMINI ENRICHMENT RULES
+
+- Enrichment runs AFTER new Changes are detected and stored
+- Enrichment steps run in parallel with Promise.all per Change
+- If enrichment fails, Change remains stored with enrichedAt: null
+- Never block Change storage waiting for enrichment
+- Gemini model: gemini-1.5-pro for enrichment, gemini-1.5-flash for summaries
+
+---
+
+## ACTIONABLE ITEMS — THREE LEVELS
+
+### Level 1 — Suggested (Manual Approval)
+
+MarketSense suggests an action. PM clicks to approve. One-click creation.
+UI shows "Create Task" button with pre-filled title, description, priority.
+
+### Level 2 — Draft Queue (Approval Workflow)
+
+MarketSense creates draft tickets in a "MarketSense Inbox" column.
+PM reviews, approves, or dismisses. Never auto-sends to external tool.
+
+### Level 3 — Automated (Configured Rules)
+
+PM has set AutomationRules. MarketSense creates tickets automatically when rule matches.
+Only available when user has explicitly configured and enabled rules.
+
+---
+
+## PRICING TIERS — MarketSense PLANS
+
+```typescript
+export const MarketSensePlan = {
+  STARTER: "starter", // 1 PM, 3 competitors, manual scans only
+  GROWTH: "growth", // 3 PMs, 10 competitors, basic automation
+  ENTERPRISE: "enterprise", // Unlimited, full automation, Jira/Linear, SSO
+} as const;
+```
+
+Feature gating rules:
+
+- Starter: no automation, no integrations, no compliance module
+- Growth: automation enabled, Jira + Linear only, compliance add-on
+- Enterprise: all integrations, compliance included, custom rules, API access
+
+---
+
+## NAMING CONVENTIONS — MarketSense SPECIFIC
+
+### Files
+
+- `*.service.ts` — business logic (scan.service.ts, change-detection.service.ts)
+- `*.repository.ts` — database queries (scan.repository.ts, competitor.repository.ts)
+- `*.goal.ts` — TinyFish goal builders (pricing.goal.ts, jobs.goal.ts)
+- `*.actions.ts` — Next.js Server Actions (scan.actions.ts)
+- `*.types.ts` — domain types (scan.types.ts, change.types.ts)
+
+### Variables
+
+- `scanRun` not `scan_run` or `job`
+- `competitorPage` not `page` or `source`
+- `changeType` not `type` or `category`
+- `signalType` not `signal` or `tag`
+- `resultJson` not `result` or `data` (TinyFish specific)
+- `companyId` always camelCase, always from session
+
+### Functions
+
+- `buildPricingGoal()` not `getPricingGoal()` or `pricingGoal()`
+- `detectChanges()` not `findChanges()` or `checkChanges()`
+- `enrichChange()` not `analyzeChange()` or `processChange()`
+- `runCompetitorScan()` not `scanCompetitor()` or `startScan()`
+
+---
+
+## UI COMPONENT NAMING CONVENTIONS
+
+```
+components/features/
+├── competitor-radar/
+│   ├── CompetitorCard.tsx
+│   ├── ScanProgress.tsx       # Live SSE scan progress feed
+│   ├── ChangesFeed.tsx        # List of detected changes
+│   ├── InsightCard.tsx        # AI-generated PM briefing
+│   └── ActionItemModal.tsx    # Create/approve action item
+├── compliance-radar/
+│   ├── CircularFeed.tsx
+│   └── CircularCard.tsx
+├── integrations/
+│   ├── JiraConnect.tsx
+│   ├── LinearConnect.tsx
+│   └── RuleBuilder.tsx        # IFTTT-style automation rule builder
+└── dashboard/
+    ├── SignalSummary.tsx       # Today's key signals at a glance
+    └── CompetitorMatrix.tsx   # Side-by-side competitor comparison
+```
+
+---
+
+## WHAT MarketSense IS NOT
+
+- NOT a generic web scraping tool — it is a PM intelligence platform
+- NOT a security monitoring tool
+- NOT a customer support tool — insights are for product strategy, not support
+- NOT a real-time dashboard — scans are on-demand, not streaming live data
+- NOT autonomous — PMs are always in control of what gets acted upon
