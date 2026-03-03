@@ -279,6 +279,42 @@ src/
 
 ---
 
+## CHANNEL → GOAL → CHANGE MAPPING
+
+TinyFish goals are wired into Vigil’s multi-channel scan pipeline via `SourceChannel` and `scan.service.ts`.
+
+**Supported scan channels (SourceChannel):**
+
+- `PRICING`   → `buildPricingGoal()`   → `ChangeType.PRICING`
+- `JOBS`      → `buildJobsGoal()`      → `ChangeType.JOB_SIGNAL`
+- `PRODUCT`   → `buildChangelogGoal()` → `ChangeType.CHANGELOG` (product launches, pivots, changelog)
+- `FEATURES`  → `buildFeaturesGoal()`  → `ChangeType.FEATURE_ADD`
+- `REVIEWS`   → `buildReviewsGoal()`   → `ChangeType.REVIEW_TREND`
+
+**Rules:**
+
+- When you add or modify a goal:
+  - Update `resolveGoal(...)` in `scan.service.ts` to map the **channel** to the correct **goal builder**.
+  - Extend the `runCompetitorScan` / `runCompetitorScanStreaming` mapping so **every channel**:
+    - Parses `resultJson` into a typed `*ResultJson` structure.
+    - Emits at least one `BackendChange` per relevant item.
+    - Optionally emits a summary `BackendInsight` per competitor.
+- Never leave a channel “half-wired” (goal defined but no change/insight mapping) — this causes silent “no output” in the UI.
+- When a new channel is added, also:
+  - Add it to `SourceChannel` and `SOURCE_CHANNEL_LABELS` in `src/constants/index.ts`.
+  - Include it in any channel lists used by:
+    - Competitor filters (Competitor Radar),
+    - Insights summary (`insightsService.getSummary()`),
+    - Information dashboard (`informationService.getSummary()` / `getChannelDetails()`).
+
+This guarantees that **every scan channel**:
+
+- Calls a well-defined TinyFish goal,
+- Persists normalized `Change` / `Insight` records,
+- And appears consistently across Status, Insights, Information, and Competitor Radar views.
+
+---
+
 ## SSE STREAM PARSING
 
 The `run-sse` endpoint streams Server-Sent Events. See [API Reference (SSE)](https://docs.tinyfish.ai/api-reference/automation/run-browser-automation-with-sse-streaming).
