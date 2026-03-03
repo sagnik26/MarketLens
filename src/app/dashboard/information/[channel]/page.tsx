@@ -9,7 +9,8 @@ import { DashboardShimmer } from "@/components/common";
 export const dynamic = "force-dynamic";
 
 interface InformationChannelPageProps {
-  params: { channel: string };
+  /** Next 15 passes params as a Promise that must be awaited in RSCs. */
+  params: Promise<{ channel: string }>;
   searchParams?: { competitorId?: string };
 }
 
@@ -18,7 +19,7 @@ function isSourceChannel(value: string): value is SourceChannelType {
 }
 
 async function InformationChannelContent({ params, searchParams }: InformationChannelPageProps) {
-  const rawChannel = params.channel;
+  const { channel: rawChannel } = await params;
   if (!isSourceChannel(rawChannel)) {
     notFound();
   }
