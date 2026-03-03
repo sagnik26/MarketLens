@@ -1,14 +1,30 @@
 /** Status page: shows in-progress scans (client store) and agents/recent runs (server). */
 
+import { Suspense } from "react";
 import { getStatusSummaryAction } from "@/actions/status.actions";
 import { StatusView } from "@/components/features/status/StatusView";
+import { DashboardShimmer } from "@/components/common";
 
-export default async function StatusPage() {
+async function StatusContent() {
   const result = await getStatusSummaryAction();
   const agents = result.success && result.data ? result.data.agents : [];
   const recentRuns =
     result.success && result.data ? result.data.recentRuns : [];
 
+  return (
+    <>
+      {!result.success && (
+        <p className="mb-4 text-sm text-red-600 dark:text-red-400" role="alert">
+          Unable to load status summary.
+        </p>
+      )}
+
+      <StatusView agents={agents} recentRuns={recentRuns} />
+    </>
+  );
+}
+
+export default function StatusPage() {
   return (
     <div className="min-h-screen px-6 py-8 md:px-8 md:py-10">
       <header className="mb-10">
@@ -27,13 +43,9 @@ export default async function StatusPage() {
         </p>
       </header>
 
-      {!result.success && (
-        <p className="mb-4 text-sm text-red-600 dark:text-red-400" role="alert">
-          Unable to load status summary.
-        </p>
-      )}
-
-      <StatusView agents={agents} recentRuns={recentRuns} />
+      <Suspense fallback={<DashboardShimmer />}>
+        <StatusContent />
+      </Suspense>
     </div>
   );
 }

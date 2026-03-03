@@ -1,7 +1,11 @@
 /** Business logic for Insights summary; backed by MongoDB Change documents. */
 
 import type { BackendInsight } from "@/types";
-import type { InsightTrendPoint, InsightsSummary } from "@/actions/insights.actions";
+import type {
+  InsightSeries,
+  InsightTrendPoint,
+  InsightsSummary,
+} from "@/actions/insights.actions";
 import { changeRepository } from "@/server/repositories/change.repository";
 import { SourceChannel } from "@/constants";
 
@@ -62,21 +66,73 @@ export const insightsService = {
     const insights = Array.from(insightMap.values());
 
     // Very simple trend: group by ISO week label derived from generatedAt.
-    const buckets = new Map<string, number>();
+    const totalBuckets = new Map<string, number>();
+    const byChannelBuckets = new Map<SourceChannel | "unknown", Map<string, number>>();
 
     insights.forEach((insight) => {
       const date = insight.generatedAt ? new Date(insight.generatedAt) : new Date();
       const year = date.getUTCFullYear();
       const week = getIsoWeekNumber(date);
       const label = `${year}-W${week}`;
-      buckets.set(label, (buckets.get(label) ?? 0) + 1);
+
+      totalBuckets.set(label, (totalBuckets.get(label) ?? 0) + 1);
+
+      const channelKey = (insight.pageType ?? "unknown") as SourceChannel | "unknown";
+      const channelMap =
+        byChannelBuckets.get(channelKey) ??
+        (() => {
+          const m = new Map<string, number>();
+          byChannelBuckets.set(channelKey, m);
+          return m;
+        })();
+
+      channelMap.set(label, (channelMap.get(label) ?? 0) + 1);
     });
 
-    const trend: InsightTrendPoint[] = Array.from(buckets.entries())
+    const trend: InsightTrendPoint[] = Array.from(totalBuckets.entries())
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([weekLabel, totalSignals]) => ({ weekLabel, totalSignals }));
 
-    return { trend, insights };
+    const trendSeries: InsightSeries[] = [];
+
+    if (trend.length > 0) {
+      trendSeries.push({
+        id: "all",
+        channel: "all",
+        label: "All channels",
+        points: trend,
+      });
+    }
+
+    for (const [channelKey, bucketMap] of byChannelBuckets.entries()) {
+      if (channelKey === "unknown") continue;
+      const entries = Array.from(bucketMap.entries()).sort(([a], [b]) =>
+        a < b ? -1 : a > b ? 1 : 0,
+      );
+      const points: InsightTrendPoint[] = entries.map(([weekLabel, totalSignals]) => ({
+        weekLabel,
+        totalSignals,
+      }));
+      if (points.length === 0) continue;
+
+      const label =
+        channelKey === SourceChannel.JOBS
+          ? "Jobs"
+          : channelKey === SourceChannel.PRICING
+            ? "Pricing"
+            : channelKey === SourceChannel.FEATURES
+              ? "Features"
+              : "Product Hunt";
+
+      trendSeries.push({
+        id: channelKey,
+        channel: channelKey,
+        label,
+        points,
+      });
+    }
+
+    return { trend, trendSeries, insights };
   },
 };
 

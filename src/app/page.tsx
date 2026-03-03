@@ -4,9 +4,9 @@ import { LandingNav, LandingHero, LandingFeatures } from "@/components/features/
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen bg-neutral-950 text-white">
+    <div className="flex min-h-screen flex-col bg-neutral-950 text-white">
       <LandingNav />
-      <main>
+      <main className="flex-1">
         <LandingHero />
         <LandingFeatures />
       </main>

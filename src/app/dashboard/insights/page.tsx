@@ -1,21 +1,12 @@
 /** Insights page: backend-backed trend line + channel-filtered insight list. */
 
-import { EmptyState } from "@/components/common";
+import { Suspense } from "react";
+import { EmptyState, DashboardShimmer } from "@/components/common";
 import { getInsightsSummaryAction } from "@/actions/insights.actions";
 import { SOURCE_CHANNEL_LABELS, SourceChannel, type SourceChannel as SourceChannelType } from "@/constants";
+import { InsightsTrendChart } from "@/components/features/insights/InsightsTrendChart";
 
-function buildLinePath(points: { x: number; y: number }[]): string {
-  if (points.length === 0) return "";
-  const [first, ...rest] = points;
-  let d = `M${first.x} ${first.y}`;
-  if (rest.length > 0) {
-    const segments = rest.map((pt) => `L ${pt.x} ${pt.y}`).join(" ");
-    d += ` ${segments}`;
-  }
-  return d;
-}
-
-export default async function InsightsPage() {
+async function InsightsContent() {
   const result = await getInsightsSummaryAction();
 
   const allChannels: (SourceChannelType | "all")[] = [
@@ -27,85 +18,31 @@ export default async function InsightsPage() {
   ];
 
   const summary = result.success && result.data ? result.data : null;
-  const trend = summary?.trend ?? [];
-  const maxSignals = trend.reduce((max, pt) => (pt.totalSignals > max ? pt.totalSignals : max), 0);
-  const yScale = maxSignals > 0 ? 80 / maxSignals : 1;
-
-  const svgPoints = trend.map((pt, idx) => ({
-    x: 10 + (idx / Math.max(1, trend.length - 1)) * 300,
-    y: 120 - pt.totalSignals * yScale,
-  }));
-
-  const linePath = buildLinePath(svgPoints);
-
+  const trendSeries = summary?.trendSeries ?? [];
   const insights = summary?.insights ?? [];
 
-  return (
-    <div className="min-h-screen px-6 py-8 md:px-8 md:py-10">
-      <header className="mb-10">
-        <div className="mb-1 inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50/80 px-3 py-1 text-xs font-medium text-violet-700 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-300">
-          <span className="h-1.5 w-1.5 rounded-full bg-violet-500" aria-hidden />
-          Insights
-        </div>
-        <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 md:text-4xl">
-          Insights
-        </h1>
-        <p className="mt-3 max-w-xl text-zinc-600 dark:text-zinc-400">
-          Cross-competitor insights, trends, and recommended actions, grouped by source channel.
-        </p>
-      </header>
+  const palette = ["#6366f1", "#22c55e", "#f97316", "#e11d48", "#0ea5e9"];
 
+  const allPoints = trendSeries.flatMap((series) => series.points);
+  const weekLabels = Array.from(
+    new Set(allPoints.map((pt) => pt.weekLabel)),
+  ).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
+  return (
+    <>
       <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Insight trend</h2>
         <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
           Line chart showing how total signals move week over week. Real data will appear here once scans are persisted.
         </p>
 
-        <div className="mt-8 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-4 dark:border-neutral-700 dark:bg-neutral-900/70">
+        <div className="mt-8 rounded-xl border border-neutral-200 bg-neutral-50 px-2 py-4 sm:px-4 dark:border-neutral-700 dark:bg-neutral-900/70">
           <div className="mb-3 flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
             <span>Signals over time</span>
-            <span>{trend.length} weeks</span>
+            <span>{weekLabels.length} weeks</span>
           </div>
-          <div className="h-40 w-full">
-            {trend.length === 0 ? (
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                No trend data yet. Run a few scans from Competitor Radar to populate this view.
-              </p>
-            ) : (
-              <svg viewBox="0 0 320 160" className="h-full w-full">
-                <defs>
-                  <linearGradient id="line-gradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#6366f1" stopOpacity="0.5" />
-                    <stop offset="100%" stopColor="#22d3ee" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                <g strokeWidth="0.5" stroke="currentColor" className="text-neutral-200 dark:text-neutral-700">
-                  <line x1="0" y1="20" x2="320" y2="20" />
-                  <line x1="0" y1="60" x2="320" y2="60" />
-                  <line x1="0" y1="100" x2="320" y2="100" />
-                  <line x1="0" y1="140" x2="320" y2="140" />
-                </g>
-                {linePath && (
-                  <>
-                    <path
-                      d={`${linePath} L 310 160 L 10 160 Z`}
-                      fill="url(#line-gradient)"
-                    />
-                    <path
-                      d={linePath}
-                      fill="none"
-                      strokeWidth="2.5"
-                      className="stroke-violet-500 dark:stroke-violet-400"
-                    />
-                    <g className="fill-white stroke-violet-500 dark:stroke-violet-400">
-                      {svgPoints.map((pt, idx) => (
-                        <circle key={trend[idx]?.weekLabel ?? idx} cx={pt.x} cy={pt.y} r="3" />
-                      ))}
-                    </g>
-                  </>
-                )}
-              </svg>
-            )}
+          <div className="mt-4 h-64 w-full">
+            <InsightsTrendChart weekLabels={weekLabels} trendSeries={trendSeries} />
           </div>
           <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
             Each point represents the total number of signals generated across all competitors in that week.
@@ -164,14 +101,72 @@ export default async function InsightsPage() {
           </div>
 
           <div className="flex items-stretch">
-            <EmptyState
-              title="No insights available"
-              description="Once TinyFish-driven scans are stored, this panel will reflect real signal trends and recommended actions."
-            />
+            {insights.length === 0 ? (
+              <EmptyState
+                title="No insights available"
+                description="Once TinyFish-driven scans are stored, this panel will reflect real signal trends and recommended actions."
+              />
+            ) : (
+              <div className="flex w-full flex-col justify-between rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-zinc-700 dark:border-neutral-700 dark:bg-neutral-900/60 dark:text-zinc-200">
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    Summary
+                  </h3>
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    {insights.length} insight{insights.length === 1 ? "" : "s"} derived from recent
+                    signals across {allChannels.length - 1} channels.
+                  </p>
+                </div>
+                <ul className="mt-3 space-y-1 text-xs text-zinc-600 dark:text-zinc-300">
+                  {trendSeries
+                    .filter((s) => s.channel !== "all")
+                    .map((series, idx) => (
+                      <li key={series.id} className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-2">
+                          <span
+                            className="h-2 w-6 rounded-full"
+                            style={{ backgroundColor: palette[(idx + 1) % palette.length] }}
+                          />
+                          <span>{series.label}</span>
+                        </span>
+                        <span className="font-medium">
+                          {series.points.reduce(
+                            (sum, pt) => sum + pt.totalSignals,
+                            0,
+                          )}{" "}
+                          signals
+                        </span>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
       </section>
-    </div>
+    </>
   );
 }
 
+export default function InsightsPage() {
+  return (
+    <div className="min-h-screen px-6 py-8 md:px-8 md:py-10">
+      <header className="mb-10">
+        <div className="mb-1 inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50/80 px-3 py-1 text-xs font-medium text-violet-700 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-violet-500" aria-hidden />
+          Insights
+        </div>
+        <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 md:text-4xl">
+          Insights
+        </h1>
+        <p className="mt-3 max-w-xl text-zinc-600 dark:text-zinc-400">
+          Cross-competitor insights, trends, and recommended actions, grouped by source channel.
+        </p>
+      </header>
+
+      <Suspense fallback={<DashboardShimmer />}>
+        <InsightsContent />
+      </Suspense>
+    </div>
+  );
+}

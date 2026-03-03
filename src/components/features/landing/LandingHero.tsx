@@ -15,8 +15,8 @@ const BackgroundBeams = dynamic(
 
 export function LandingHero() {
   return (
-    <section className="relative flex min-h-[90vh] w-full flex-col items-center justify-center overflow-hidden rounded-md bg-neutral-950 px-4 py-24">
-      <BackgroundBeams className="top-0" />
+    <section className="relative flex min-h-[calc(100vh-64px)] w-full flex-col items-center justify-center overflow-hidden bg-neutral-950 px-4 py-24">
+      <BackgroundBeams />
       <div className="relative z-10 mx-auto max-w-4xl text-center">
         <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl md:text-6xl">
           <TextGenerateEffect
@@ -36,7 +36,7 @@ export function LandingHero() {
           <Link
             href="/dashboard"
             className={cn(
-              "rounded-lg bg-white px-6 py-3 text-sm font-semibold text-neutral-900 shadow-lg transition hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-neutral-950"
+              "rounded-lg bg-white px-6 py-3 text-sm font-semibold text-neutral-900 shadow-lg transition hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-neutral-950 no-underline"
             )}
           >
             Go to Dashboard
@@ -44,7 +44,7 @@ export function LandingHero() {
           <Link
             href="/dashboard/actions/competitor-radar"
             className={cn(
-              "rounded-lg border border-neutral-600 bg-transparent px-6 py-3 text-sm font-semibold text-white transition hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2 focus:ring-offset-neutral-950"
+              "rounded-lg border border-neutral-600 bg-transparent px-6 py-3 text-sm font-semibold text-white transition hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2 focus:ring-offset-neutral-950 no-underline"
             )}
           >
             Competitor Radar

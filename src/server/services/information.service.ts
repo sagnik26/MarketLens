@@ -5,6 +5,7 @@ import { competitorRepository } from "@/server/repositories/competitor.repositor
 import { changeRepository } from "@/server/repositories/change.repository";
 
 export interface InformationProfile {
+  competitorId: string;
   name: string;
   segment: string;
   focus: string;
@@ -75,6 +76,7 @@ export const informationService = {
             const count = matching.length;
 
             return {
+              competitorId: c.id,
               name: c.name,
               segment: channel === SourceChannel.JOBS ? "Hiring" : "Product",
               focus: `${count} ${label.toLowerCase()} signal${count === 1 ? "" : "s"} detected. Latest: ${latest.title}`,
@@ -94,6 +96,51 @@ export const informationService = {
     };
 
     return { competitorRadar, complianceRadar };
+  },
+
+  async getChannelDetails(params: {
+    channel: SourceChannelType;
+    competitorId?: string;
+  }): Promise<{
+    channel: SourceChannelType;
+    label: string;
+    changes: {
+      id: string;
+      competitorId: string;
+      competitorName: string;
+      title: string;
+      summary: string | null;
+      detectedAt: string;
+      url?: string;
+    }[];
+  }> {
+    const { channel, competitorId } = params;
+
+    const changes = await changeRepository.findRecentByCompany({
+      companyId: DEMO_COMPANY_ID,
+      limit: 500,
+      pageType: channel,
+    });
+
+    const filtered = competitorId
+      ? changes.filter((chg) => chg.competitorId === competitorId)
+      : changes;
+
+    const mapped = filtered.map((chg) => ({
+      id: chg.id,
+      competitorId: chg.competitorId,
+      competitorName: chg.competitorName,
+      title: chg.title,
+      summary: chg.summary,
+      detectedAt: chg.detectedAt,
+      url: chg.url,
+    }));
+
+    return {
+      channel,
+      label: SOURCE_CHANNEL_LABELS[channel],
+      changes: mapped,
+    };
   },
 };
 

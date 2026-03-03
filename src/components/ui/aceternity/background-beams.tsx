@@ -6,15 +6,14 @@ export function BackgroundBeams({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "pointer-events-none absolute inset-0 z-0 flex items-center justify-center bg-neutral-950 [mask-image:radial-gradient(ellipse_80%_50%_at_50%_0%,#000_70%,transparent_110%)]",
+        "pointer-events-none absolute inset-0 z-0 flex items-center justify-center bg-neutral-950 [mask-image:radial-gradient(ellipse_140%_90%_at_50%_0%,#000_75%,transparent_120%)]",
         className
       )}
       aria-hidden
     >
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#4f4f4f12_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f12_1px,transparent_1px)] bg-[size:14px_24px]" />
-      <div className="absolute left-1/2 top-0 h-[37.5rem] w-[62.5rem] -translate-x-1/2 rounded-full bg-[radial-gradient(circle_farthest-side_at_50%_0%,rgba(120,119,198,0.15),transparent)]" />
       <svg
-        className="absolute left-1/2 top-0 -translate-x-1/2"
+        className="absolute inset-x-0 top-0 w-full max-w-none"
         fill="none"
         viewBox="0 0 1228 310"
         xmlns="http://www.w3.org/2000/svg"

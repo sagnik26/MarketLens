@@ -221,16 +221,11 @@ export function CompetitorManageView() {
 
   const filteredCompetitors = useMemo(() => {
     if (activeChannel === "all") return competitors;
-    if (channelSummaries.length === 0) return competitors;
 
-    const allowedIds = new Set(
-      channelSummaries
-        .filter((summary) => summary.channels.some((c) => c.channel === activeChannel && c.totalSignals > 0))
-        .map((summary) => summary.competitorId)
-    );
-
-    return competitors.filter((c) => allowedIds.has(c.id));
-  }, [activeChannel, channelSummaries, competitors]);
+    // Filter by the channels configured on each competitor so filters
+    // work even before any scans have produced summary data.
+    return competitors.filter((c) => c.channels?.includes(activeChannel));
+  }, [activeChannel, competitors]);
 
   return (
     <div className="space-y-8">

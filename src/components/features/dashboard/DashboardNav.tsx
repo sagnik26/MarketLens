@@ -16,7 +16,6 @@ const OVERVIEW_ITEM = {
 const ACTIONS_GROUP = {
   label: "Actions",
   icon: IconActions,
-  href: "/dashboard/actions",
   children: [
     { href: "/dashboard/actions/competitor-radar", label: "Competitor Radar", icon: IconRadar },
     { href: "/dashboard/actions/compliance", label: "Compliance Radar", icon: IconCompliance },
@@ -187,14 +186,12 @@ export function DashboardNav() {
             isActive={pathname === "/dashboard"}
           />
 
-          {/* Actions group with nested items */}
-          <div className="flex flex-col gap-0.5">
-            <NavItem
-              href={ACTIONS_GROUP.href}
-              label={ACTIONS_GROUP.label}
-              icon={ACTIONS_GROUP.icon}
-              isActive={pathname === ACTIONS_GROUP.href}
-            />
+          {/* Actions group as always-open dropdown (no standalone page) */}
+          <div className="mt-1 flex flex-col gap-0.5">
+            <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              <IconActions className="h-4 w-4 shrink-0 text-zinc-400 dark:text-zinc-500" />
+              <span>Actions</span>
+            </div>
             <ul className="flex flex-col gap-0.5 pl-4" aria-label="Actions submenu">
               {ACTIONS_GROUP.children.map((child) => (
                 <li key={child.href}>

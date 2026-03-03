@@ -17,12 +17,33 @@ function buildHeaders() {
   };
 }
 
+function toTinyFishError(err: unknown): string {
+  if (err instanceof Error) {
+    const cause = err.cause instanceof Error ? err.cause.message : String(err.cause ?? "");
+    const extra = cause ? ` (${cause})` : "";
+    return `${err.message}${extra}`;
+  }
+  return String(err);
+}
+
 export async function runSSE(body: TinyFishRequest): Promise<TinyFishSSEResult> {
-  const response = await fetch(`${BASE_URL}/run-sse`, {
-    method: "POST",
-    headers: buildHeaders(),
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}/run-sse`, {
+      method: "POST",
+      headers: buildHeaders(),
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    const message = toTinyFishError(err);
+    return {
+      success: false,
+      resultJson: null,
+      status: "FAILED",
+      error: `TinyFish request failed: ${message}`,
+      rawEvents: [],
+    };
+  }
 
   if (!response.ok) {
     const text = await response.text();
