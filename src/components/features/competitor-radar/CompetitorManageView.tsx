@@ -309,8 +309,9 @@ export function CompetitorManageView() {
     () => [
       SourceChannel.PRICING,
       SourceChannel.JOBS,
-      SourceChannel.PRODUCT_HUNT,
+      SourceChannel.PRODUCT,
       SourceChannel.FEATURES,
+      SourceChannel.REVIEWS,
     ],
     [],
   );
@@ -319,8 +320,9 @@ export function CompetitorManageView() {
     const totals: Record<SourceChannelType, number> = {
       [SourceChannel.PRICING]: 0,
       [SourceChannel.JOBS]: 0,
-      [SourceChannel.PRODUCT_HUNT]: 0,
+      [SourceChannel.PRODUCT]: 0,
       [SourceChannel.FEATURES]: 0,
+      [SourceChannel.REVIEWS]: 0,
     };
 
     for (const summary of channelSummaries) {

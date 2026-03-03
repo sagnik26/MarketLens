@@ -5,6 +5,7 @@ import { runSSE, runSSEWithCallbacks } from "@/server/lib/tinyfish/client";
 import {
   buildPricingGoal,
   buildJobsGoal,
+  buildReviewsGoal,
   buildChangelogGoal,
   buildFeaturesGoal,
   buildComplianceGoal,
@@ -17,8 +18,9 @@ import { changeRepository } from "@/server/repositories/change.repository";
 type CompetitorChannel =
   | typeof SourceChannel.PRICING
   | typeof SourceChannel.JOBS
-  | typeof SourceChannel.PRODUCT_HUNT
-  | typeof SourceChannel.FEATURES;
+  | typeof SourceChannel.PRODUCT
+  | typeof SourceChannel.FEATURES
+  | typeof SourceChannel.REVIEWS;
 
 interface CompetitorPageTarget {
   competitorId: string;
@@ -47,6 +49,57 @@ interface JobsResultJson {
   totalCount?: number;
 }
 
+interface PricingResultJson {
+  plans?: {
+    name?: string;
+    monthlyPrice?: number | null;
+    annualPrice?: number | null;
+    currency?: string;
+    features?: string[];
+    usageLimits?: string | null;
+    ctaText?: string | null;
+    isPopular?: boolean;
+  }[];
+  hasPricingHidden?: boolean;
+  hiddenNote?: string | null;
+}
+
+interface FeaturesResultJson {
+  features?: {
+    name?: string;
+    category?: string | null;
+    description?: string | null;
+    highlighted?: boolean;
+  }[];
+  totalFound?: number;
+}
+
+interface ReviewsResultJson {
+  reviews?: {
+    rating?: number;
+    reviewerRole?: string | null;
+    companySizeRange?: string | null;
+    pros?: string;
+    cons?: string;
+    summary?: string;
+    postedAt?: string | null;
+  }[];
+  averageRating?: number | null;
+  totalReviews?: number | null;
+}
+
+interface ChangelogResultJson {
+  entries?: {
+    title?: string;
+    publishedAt?: string | null;
+    url?: string | null;
+    summary?: string;
+    isFeatureAnnouncement?: boolean;
+    isPivotSignal?: boolean;
+  }[];
+  totalFound?: number;
+}
+
 function resolveGoal(channel: CompetitorChannel): string {
   switch (channel) {
     case SourceChannel.PRICING:
@@ -55,8 +108,10 @@ function resolveGoal(channel: CompetitorChannel): string {
       return buildJobsGoal();
     case SourceChannel.FEATURES:
       return buildFeaturesGoal();
-    case SourceChannel.PRODUCT_HUNT:
+    case SourceChannel.PRODUCT:
       return buildChangelogGoal();
+    case SourceChannel.REVIEWS:
+      return buildReviewsGoal();
     default:
       return buildPricingGoal();
   }
@@ -132,10 +187,10 @@ export const scanService = {
     for (const { page, result } of resolved) {
       if (!result.success) continue;
 
-      if (page.channel === SourceChannel.JOBS) {
-        const raw = result.resultJson as unknown;
-        if (!raw || typeof raw !== "object") continue;
+      const raw = result.resultJson as unknown;
+      if (!raw || typeof raw !== "object") continue;
 
+      if (page.channel === SourceChannel.JOBS) {
         const jobsJson = raw as JobsResultJson;
         if (!Array.isArray(jobsJson.jobs)) continue;
 
@@ -199,6 +254,204 @@ export const scanService = {
 
           insights.push(insight);
         }
+      } else if (page.channel === SourceChannel.PRICING) {
+        const pricingJson = raw as PricingResultJson;
+        if (!Array.isArray(pricingJson.plans) || pricingJson.plans.length === 0) continue;
+
+        const pageType = SourceChannel.PRICING;
+        pricingJson.plans.forEach((plan, index) => {
+          if (!plan || !plan.name) return;
+
+          const detectedAt = startedAt;
+          const priceSummaryParts: string[] = [];
+          if (typeof plan.monthlyPrice === "number") priceSummaryParts.push(`$${plan.monthlyPrice}/mo`);
+          if (typeof plan.annualPrice === "number") priceSummaryParts.push(`$${plan.annualPrice}/yr`);
+
+          const change: BackendChange = {
+            id: `pricing-${page.competitorId}-${Date.now()}-${index}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            changeType: ChangeType.PRICING,
+            signalType: SignalType.INFORMATIONAL,
+            priority: Priority.MEDIUM,
+            title: `${plan.name} pricing for ${page.competitorName}`,
+            summary:
+              priceSummaryParts.join(" · ") ||
+              (pricingJson.hasPricingHidden ? "Pricing requires contacting sales" : null),
+            isRead: false,
+            isDismissed: false,
+            detectedAt,
+            pageType,
+            url: page.url,
+          };
+
+          changes.push(change);
+        });
+
+        const totalPlans = pricingJson.plans.length;
+        if (totalPlans > 0) {
+          const insight: BackendInsight = {
+            id: `insight-pricing-${page.competitorId}-${Date.now()}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            title: `Pricing structure for ${page.competitorName}`,
+            briefing: `Detected ${totalPlans} pricing plan${totalPlans === 1 ? "" : "s"} on the pricing page.`,
+            signalType: SignalType.INFORMATIONAL,
+            priority: pricingJson.hasPricingHidden ? Priority.HIGH : Priority.MEDIUM,
+            recommendedActions: [],
+            generatedAt: startedAt,
+            pageType,
+            score: pricingJson.hasPricingHidden ? 0.7 : 0.4,
+            tags: ["pricing"],
+          };
+          insights.push(insight);
+        }
+      } else if (page.channel === SourceChannel.FEATURES) {
+        const featuresJson = raw as FeaturesResultJson;
+        if (!Array.isArray(featuresJson.features) || featuresJson.features.length === 0) continue;
+
+        const pageType = SourceChannel.FEATURES;
+        featuresJson.features.forEach((feat, index) => {
+          if (!feat || !feat.name) return;
+
+          const detectedAt = startedAt;
+          const change: BackendChange = {
+            id: `feature-${page.competitorId}-${Date.now()}-${index}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            changeType: ChangeType.FEATURE_ADD,
+            signalType: SignalType.INFORMATIONAL,
+            priority: feat.highlighted ? Priority.HIGH : Priority.MEDIUM,
+            title: `Feature: ${feat.name}`,
+            summary: feat.description ?? feat.category ?? null,
+            isRead: false,
+            isDismissed: false,
+            detectedAt,
+            pageType,
+            url: page.url,
+          };
+          changes.push(change);
+        });
+
+        const totalFeatures = featuresJson.features.length;
+        if (totalFeatures > 0) {
+          const insight: BackendInsight = {
+            id: `insight-features-${page.competitorId}-${Date.now()}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            title: `Product capabilities for ${page.competitorName}`,
+            briefing: `Detected ${totalFeatures} feature${totalFeatures === 1 ? "" : "s"} on the features page.`,
+            signalType: SignalType.INFORMATIONAL,
+            priority: Priority.MEDIUM,
+            recommendedActions: [],
+            generatedAt: startedAt,
+            pageType,
+            score: 0.4,
+            tags: ["features"],
+          };
+          insights.push(insight);
+        }
+      } else if (page.channel === SourceChannel.PRODUCT) {
+        const changelogJson = raw as ChangelogResultJson;
+        if (!Array.isArray(changelogJson.entries) || changelogJson.entries.length === 0) continue;
+
+        const pageType = SourceChannel.PRODUCT;
+        changelogJson.entries.forEach((entry, index) => {
+          if (!entry || !entry.title) return;
+
+          const detectedAt = entry.publishedAt && typeof entry.publishedAt === "string" ? entry.publishedAt : startedAt;
+          const isFeature = Boolean(entry.isFeatureAnnouncement);
+          const isPivot = Boolean(entry.isPivotSignal);
+
+          const change: BackendChange = {
+            id: `changelog-${page.competitorId}-${Date.now()}-${index}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            changeType: ChangeType.CHANGELOG,
+            signalType: isPivot
+              ? SignalType.THREAT
+              : isFeature
+                ? SignalType.OPPORTUNITY
+                : SignalType.INFORMATIONAL,
+            priority: isPivot ? Priority.HIGH : isFeature ? Priority.MEDIUM : Priority.LOW,
+            title: entry.title,
+            summary: entry.summary ?? null,
+            isRead: false,
+            isDismissed: false,
+            detectedAt,
+            pageType,
+            url: entry.url ?? page.url,
+          };
+          changes.push(change);
+        });
+
+        const totalEntries = changelogJson.entries.length;
+        if (totalEntries > 0) {
+          const insight: BackendInsight = {
+            id: `insight-product-${page.competitorId}-${Date.now()}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            title: `Recent product updates for ${page.competitorName}`,
+            briefing: `Detected ${totalEntries} recent changelog entr${totalEntries === 1 ? "y" : "ies"} on the product page.`,
+            signalType: SignalType.INFORMATIONAL,
+            priority: Priority.MEDIUM,
+            recommendedActions: [],
+            generatedAt: startedAt,
+            pageType,
+            score: 0.5,
+            tags: ["product", "changelog"],
+          };
+          insights.push(insight);
+        }
+      } else if (page.channel === SourceChannel.REVIEWS) {
+        const reviewsJson = raw as ReviewsResultJson;
+        if (!Array.isArray(reviewsJson.reviews) || reviewsJson.reviews.length === 0) continue;
+
+        const pageType = SourceChannel.REVIEWS;
+        reviewsJson.reviews.forEach((rev, index) => {
+          if (!rev) return;
+
+          const detectedAt = rev.postedAt && typeof rev.postedAt === "string" ? rev.postedAt : startedAt;
+          const summary = rev.summary ?? rev.pros ?? rev.cons ?? null;
+
+          const change: BackendChange = {
+            id: `review-${page.competitorId}-${Date.now()}-${index}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            changeType: ChangeType.REVIEW_TREND,
+            signalType: SignalType.INFORMATIONAL,
+            priority: Priority.MEDIUM,
+            title: `Review (${rev.rating ?? "NR"}/5) for ${page.competitorName}`,
+            summary,
+            isRead: false,
+            isDismissed: false,
+            detectedAt,
+            pageType,
+            url: page.url,
+          };
+          changes.push(change);
+        });
+
+        const totalReviews = reviewsJson.totalReviews ?? reviewsJson.reviews.length;
+        const avgRating = reviewsJson.averageRating ?? null;
+        const insight: BackendInsight = {
+          id: `insight-reviews-${page.competitorId}-${Date.now()}`,
+          competitorId: page.competitorId,
+          competitorName: page.competitorName,
+          title: `Review sentiment for ${page.competitorName}`,
+          briefing:
+            avgRating != null
+              ? `Average rating ${avgRating.toFixed(1)}/5 from ${totalReviews} review${totalReviews === 1 ? "" : "s"}.`
+              : `Detected ${totalReviews} review${totalReviews === 1 ? "" : "s"} on the reviews page.`,
+          signalType: SignalType.INFORMATIONAL,
+          priority: Priority.MEDIUM,
+          recommendedActions: [],
+          generatedAt: startedAt,
+          pageType,
+          score: 0.5,
+          tags: ["reviews"],
+        };
+        insights.push(insight);
       }
     }
 
@@ -294,10 +547,10 @@ export const scanService = {
     for (const { page, result } of resolved) {
       if (!result.success) continue;
 
-      if (page.channel === SourceChannel.JOBS) {
-        const raw = result.resultJson as unknown;
-        if (!raw || typeof raw !== "object") continue;
+      const raw = result.resultJson as unknown;
+      if (!raw || typeof raw !== "object") continue;
 
+      if (page.channel === SourceChannel.JOBS) {
         const jobsJson = raw as JobsResultJson;
         if (!Array.isArray(jobsJson.jobs)) continue;
 
@@ -361,6 +614,204 @@ export const scanService = {
 
           insights.push(insight);
         }
+      } else if (page.channel === SourceChannel.PRICING) {
+        const pricingJson = raw as PricingResultJson;
+        if (!Array.isArray(pricingJson.plans) || pricingJson.plans.length === 0) continue;
+
+        const pageType = SourceChannel.PRICING;
+        pricingJson.plans.forEach((plan, index) => {
+          if (!plan || !plan.name) return;
+
+          const detectedAt = startedAt;
+          const priceSummaryParts: string[] = [];
+          if (typeof plan.monthlyPrice === "number") priceSummaryParts.push(`$${plan.monthlyPrice}/mo`);
+          if (typeof plan.annualPrice === "number") priceSummaryParts.push(`$${plan.annualPrice}/yr`);
+
+          const change: BackendChange = {
+            id: `pricing-${page.competitorId}-${Date.now()}-${index}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            changeType: ChangeType.PRICING,
+            signalType: SignalType.INFORMATIONAL,
+            priority: Priority.MEDIUM,
+            title: `${plan.name} pricing for ${page.competitorName}`,
+            summary:
+              priceSummaryParts.join(" · ") ||
+              (pricingJson.hasPricingHidden ? "Pricing requires contacting sales" : null),
+            isRead: false,
+            isDismissed: false,
+            detectedAt,
+            pageType,
+            url: page.url,
+          };
+
+          changes.push(change);
+        });
+
+        const totalPlans = pricingJson.plans.length;
+        if (totalPlans > 0) {
+          const insight: BackendInsight = {
+            id: `insight-pricing-${page.competitorId}-${Date.now()}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            title: `Pricing structure for ${page.competitorName}`,
+            briefing: `Detected ${totalPlans} pricing plan${totalPlans === 1 ? "" : "s"} on the pricing page.`,
+            signalType: SignalType.INFORMATIONAL,
+            priority: pricingJson.hasPricingHidden ? Priority.HIGH : Priority.MEDIUM,
+            recommendedActions: [],
+            generatedAt: startedAt,
+            pageType,
+            score: pricingJson.hasPricingHidden ? 0.7 : 0.4,
+            tags: ["pricing"],
+          };
+          insights.push(insight);
+        }
+      } else if (page.channel === SourceChannel.FEATURES) {
+        const featuresJson = raw as FeaturesResultJson;
+        if (!Array.isArray(featuresJson.features) || featuresJson.features.length === 0) continue;
+
+        const pageType = SourceChannel.FEATURES;
+        featuresJson.features.forEach((feat, index) => {
+          if (!feat || !feat.name) return;
+
+          const detectedAt = startedAt;
+          const change: BackendChange = {
+            id: `feature-${page.competitorId}-${Date.now()}-${index}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            changeType: ChangeType.FEATURE_ADD,
+            signalType: SignalType.INFORMATIONAL,
+            priority: feat.highlighted ? Priority.HIGH : Priority.MEDIUM,
+            title: `Feature: ${feat.name}`,
+            summary: feat.description ?? feat.category ?? null,
+            isRead: false,
+            isDismissed: false,
+            detectedAt,
+            pageType,
+            url: page.url,
+          };
+          changes.push(change);
+        });
+
+        const totalFeatures = featuresJson.features.length;
+        if (totalFeatures > 0) {
+          const insight: BackendInsight = {
+            id: `insight-features-${page.competitorId}-${Date.now()}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            title: `Product capabilities for ${page.competitorName}`,
+            briefing: `Detected ${totalFeatures} feature${totalFeatures === 1 ? "" : "s"} on the features page.`,
+            signalType: SignalType.INFORMATIONAL,
+            priority: Priority.MEDIUM,
+            recommendedActions: [],
+            generatedAt: startedAt,
+            pageType,
+            score: 0.4,
+            tags: ["features"],
+          };
+          insights.push(insight);
+        }
+      } else if (page.channel === SourceChannel.PRODUCT) {
+        const changelogJson = raw as ChangelogResultJson;
+        if (!Array.isArray(changelogJson.entries) || changelogJson.entries.length === 0) continue;
+
+        const pageType = SourceChannel.PRODUCT;
+        changelogJson.entries.forEach((entry, index) => {
+          if (!entry || !entry.title) return;
+
+          const detectedAt = entry.publishedAt && typeof entry.publishedAt === "string" ? entry.publishedAt : startedAt;
+          const isFeature = Boolean(entry.isFeatureAnnouncement);
+          const isPivot = Boolean(entry.isPivotSignal);
+
+          const change: BackendChange = {
+            id: `changelog-${page.competitorId}-${Date.now()}-${index}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            changeType: ChangeType.CHANGELOG,
+            signalType: isPivot
+              ? SignalType.THREAT
+              : isFeature
+                ? SignalType.OPPORTUNITY
+                : SignalType.INFORMATIONAL,
+            priority: isPivot ? Priority.HIGH : isFeature ? Priority.MEDIUM : Priority.LOW,
+            title: entry.title,
+            summary: entry.summary ?? null,
+            isRead: false,
+            isDismissed: false,
+            detectedAt,
+            pageType,
+            url: entry.url ?? page.url,
+          };
+          changes.push(change);
+        });
+
+        const totalEntries = changelogJson.entries.length;
+        if (totalEntries > 0) {
+          const insight: BackendInsight = {
+            id: `insight-product-${page.competitorId}-${Date.now()}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            title: `Recent product updates for ${page.competitorName}`,
+            briefing: `Detected ${totalEntries} recent changelog entr${totalEntries === 1 ? "y" : "ies"} on the product page.`,
+            signalType: SignalType.INFORMATIONAL,
+            priority: Priority.MEDIUM,
+            recommendedActions: [],
+            generatedAt: startedAt,
+            pageType,
+            score: 0.5,
+            tags: ["product", "changelog"],
+          };
+          insights.push(insight);
+        }
+      } else if (page.channel === SourceChannel.REVIEWS) {
+        const reviewsJson = raw as ReviewsResultJson;
+        if (!Array.isArray(reviewsJson.reviews) || reviewsJson.reviews.length === 0) continue;
+
+        const pageType = SourceChannel.REVIEWS;
+        reviewsJson.reviews.forEach((rev, index) => {
+          if (!rev) return;
+
+          const detectedAt = rev.postedAt && typeof rev.postedAt === "string" ? rev.postedAt : startedAt;
+          const summary = rev.summary ?? rev.pros ?? rev.cons ?? null;
+
+          const change: BackendChange = {
+            id: `review-${page.competitorId}-${Date.now()}-${index}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            changeType: ChangeType.REVIEW_TREND,
+            signalType: SignalType.INFORMATIONAL,
+            priority: Priority.MEDIUM,
+            title: `Review (${rev.rating ?? "NR"}/5) for ${page.competitorName}`,
+            summary,
+            isRead: false,
+            isDismissed: false,
+            detectedAt,
+            pageType,
+            url: page.url,
+          };
+          changes.push(change);
+        });
+
+        const totalReviews = reviewsJson.totalReviews ?? reviewsJson.reviews.length;
+        const avgRating = reviewsJson.averageRating ?? null;
+        const insight: BackendInsight = {
+          id: `insight-reviews-${page.competitorId}-${Date.now()}`,
+          competitorId: page.competitorId,
+          competitorName: page.competitorName,
+          title: `Review sentiment for ${page.competitorName}`,
+          briefing:
+            avgRating != null
+              ? `Average rating ${avgRating.toFixed(1)}/5 from ${totalReviews} review${totalReviews === 1 ? "" : "s"}.`
+              : `Detected ${totalReviews} review${totalReviews === 1 ? "" : "s"} on the reviews page.`,
+          signalType: SignalType.INFORMATIONAL,
+          priority: Priority.MEDIUM,
+          recommendedActions: [],
+          generatedAt: startedAt,
+          pageType,
+          score: 0.5,
+          tags: ["reviews"],
+        };
+        insights.push(insight);
       }
     }
 

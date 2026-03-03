@@ -39,8 +39,9 @@ export const informationService = {
     const allChannels: SourceChannelType[] = [
       SourceChannel.PRICING,
       SourceChannel.JOBS,
-      SourceChannel.PRODUCT_HUNT,
+      SourceChannel.PRODUCT,
       SourceChannel.FEATURES,
+      SourceChannel.REVIEWS,
     ];
 
     const { competitors } = await competitorRepository.findMany({
@@ -78,7 +79,12 @@ export const informationService = {
             return {
               competitorId: c.id,
               name: c.name,
-              segment: channel === SourceChannel.JOBS ? "Hiring" : "Product",
+              segment:
+                channel === SourceChannel.JOBS
+                  ? "Hiring"
+                  : channel === SourceChannel.REVIEWS
+                    ? "Reviews"
+                    : "Product",
               focus: `${count} ${label.toLowerCase()} signal${count === 1 ? "" : "s"} detected. Latest: ${latest.title}`,
               lastScan: latest.detectedAt,
               channel,

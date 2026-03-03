@@ -13,8 +13,9 @@ async function InsightsContent() {
     "all",
     SourceChannel.PRICING,
     SourceChannel.JOBS,
-    SourceChannel.PRODUCT_HUNT,
+    SourceChannel.PRODUCT,
     SourceChannel.FEATURES,
+    SourceChannel.REVIEWS,
   ];
 
   const summary = result.success && result.data ? result.data : null;

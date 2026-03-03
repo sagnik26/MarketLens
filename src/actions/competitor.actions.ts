@@ -77,8 +77,9 @@ export async function getCompetitorChannelSummaryAction(): Promise<ActionRespons
   const channelOrder: SourceChannelType[] = [
     SourceChannel.PRICING,
     SourceChannel.JOBS,
-    SourceChannel.PRODUCT_HUNT,
+    SourceChannel.PRODUCT,
     SourceChannel.FEATURES,
+    SourceChannel.REVIEWS,
   ];
 
   const { competitors } = await competitorRepository.findMany({

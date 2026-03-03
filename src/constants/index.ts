@@ -40,8 +40,9 @@ export const PageType = {
 export const SourceChannel = {
   PRICING: "pricing",
   JOBS: "jobs",
-  PRODUCT_HUNT: "product_hunt",
+  PRODUCT: "product",
   FEATURES: "features",
+  REVIEWS: "reviews",
 } as const;
 
 export type SourceChannel = (typeof SourceChannel)[keyof typeof SourceChannel];
@@ -49,6 +50,7 @@ export type SourceChannel = (typeof SourceChannel)[keyof typeof SourceChannel];
 export const SOURCE_CHANNEL_LABELS: Record<SourceChannel, string> = {
   [SourceChannel.PRICING]: "Pricing pages",
   [SourceChannel.JOBS]: "Job postings",
-  [SourceChannel.PRODUCT_HUNT]: "Product Hunt",
+  [SourceChannel.PRODUCT]: "Product",
   [SourceChannel.FEATURES]: "Features pages",
+  [SourceChannel.REVIEWS]: "Reviews",
 };
