@@ -33,7 +33,7 @@ const SAMPLE_AGENTS = [
   { name: "compliance-agent", status: "Idle", detail: "No circulars in queue" },
 ] as const;
 
-const TOTAL_AGENTS = SAMPLE_AGENTS.length;
+const TOTAL_AGENTS: number = SAMPLE_AGENTS.length;
 const RUNNING_AGENTS = SAMPLE_AGENTS.filter((a) => a.status === "Running").length;
 const IDLE_AGENTS = TOTAL_AGENTS - RUNNING_AGENTS;
 
