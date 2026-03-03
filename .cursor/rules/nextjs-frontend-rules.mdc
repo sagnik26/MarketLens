@@ -73,22 +73,25 @@ src/
 ```typescript
 // ✅ Good
 export interface UserCardProps {
-  user: User
-  onSelect: (id: string) => void
-  isLoading?: boolean
+  user: User;
+  onSelect: (id: string) => void;
+  isLoading?: boolean;
 }
 
 // ✅ Good — const map instead of enum
 export const UserRole = {
-  ADMIN: 'admin',
-  MEMBER: 'member',
-  GUEST: 'guest',
-} as const
-export type UserRole = typeof UserRole[keyof typeof UserRole]
+  ADMIN: "admin",
+  MEMBER: "member",
+  GUEST: "guest",
+} as const;
+export type UserRole = (typeof UserRole)[keyof typeof UserRole];
 
 // ❌ Bad
-enum UserRole { ADMIN, MEMBER }
-const UserCard = ({ user }: { user: any }) => {}
+enum UserRole {
+  ADMIN,
+  MEMBER,
+}
+const UserCard = ({ user }: { user: any }) => {};
 ```
 
 ---
@@ -150,6 +153,7 @@ interface UserCardProps {
 Aceternity UI (https://ui.aceternity.com) is the primary UI library for animations, visual effects, and interactive components. It is built on top of Tailwind CSS and Framer Motion.
 
 ### Installation
+
 ```bash
 # Install dependencies
 npm install framer-motion clsx tailwind-merge
@@ -169,18 +173,18 @@ npx aceternity-ui add <component-name>
 
 ### Component Categories & What to Use
 
-| Use Case | Aceternity Component |
-|---|---|
-| Hero backgrounds | `AuroraBackground`, `BackgroundBeams`, `Spotlight`, `WavyBackground`, `Vortex` |
-| Hero text effects | `TextGenerateEffect`, `TypewriterEffect`, `FlipWords`, `ColourfulText` |
-| Card effects | `3DCardEffect`, `CardHoverEffect`, `GlareCard`, `WobbleCard`, `CardSpotlight` |
-| Scroll animations | `TracingBeam`, `StickyScrollReveal`, `HeroParallax`, `MacbookScroll` |
-| Navigation | `FloatingNavbar`, `FloatingDock`, `Sidebar` |
-| Loaders | `MultiStepLoader`, `Loader` |
-| Layout sections | `BentoGrid`, `LayoutGrid`, `Timeline` |
-| Testimonials | `AnimatedTestimonials`, `InfiniteMovingCards`, `CardStack` |
-| Buttons | `MovingBorder`, `HoverBorderGradient` |
-| Decorative | `Sparkles`, `Meteors`, `ShootingStars`, `GlowingStars` |
+| Use Case          | Aceternity Component                                                           |
+| ----------------- | ------------------------------------------------------------------------------ |
+| Hero backgrounds  | `AuroraBackground`, `BackgroundBeams`, `Spotlight`, `WavyBackground`, `Vortex` |
+| Hero text effects | `TextGenerateEffect`, `TypewriterEffect`, `FlipWords`, `ColourfulText`         |
+| Card effects      | `3DCardEffect`, `CardHoverEffect`, `GlareCard`, `WobbleCard`, `CardSpotlight`  |
+| Scroll animations | `TracingBeam`, `StickyScrollReveal`, `HeroParallax`, `MacbookScroll`           |
+| Navigation        | `FloatingNavbar`, `FloatingDock`, `Sidebar`                                    |
+| Loaders           | `MultiStepLoader`, `Loader`                                                    |
+| Layout sections   | `BentoGrid`, `LayoutGrid`, `Timeline`                                          |
+| Testimonials      | `AnimatedTestimonials`, `InfiniteMovingCards`, `CardStack`                     |
+| Buttons           | `MovingBorder`, `HoverBorderGradient`                                          |
+| Decorative        | `Sparkles`, `Meteors`, `ShootingStars`, `GlowingStars`                         |
 
 ### Rules for Using Aceternity Components
 
@@ -298,14 +302,42 @@ export function DialogContent({ className, children, ...props }: DialogPrimitive
 - NEVER use `'use client'` for data fetching or global state management.
 - NEVER use TanStack Query for data that can be fetched in a Server Component.
 - Use `<Suspense>` boundaries with meaningful skeleton fallbacks for async RSCs.
-- Use `loading.tsx` for route-level loading states.
-- Prefer streaming and Server Components over client-side loading spinners.
+- PREFER section-level `<Suspense>` (wrapping only the data-backed content) over broad `loading.tsx` route loaders. Keep static headers, titles, and descriptions **outside** `Suspense` so they always prerender immediately.
+- Use `loading.tsx` only when an entire route segment must block until all content is ready.
+- Prefer streaming and Server Components over client-side loading spinners; use shimmer/skeleton UIs instead of generic spinners.
 
 ```typescript
 // ✅ Good — Server Component fetches data directly
 export async function UserProfilePage({ params }: { params: { id: string } }) {
   const user = await userService.getById(params.id)
   return <UserProfile user={user} />
+}
+
+// ✅ Good — dashboard page with static header + Suspense-wrapped body using a shimmer
+import { Suspense } from 'react'
+import { DashboardShimmer } from '@/components/common'
+import { StatusView } from '@/components/features/status/StatusView'
+import { getStatusSummaryAction } from '@/actions/status.actions'
+
+async function StatusContent() {
+  const result = await getStatusSummaryAction()
+  const agents = result.success && result.data ? result.data.agents : []
+  const recentRuns = result.success && result.data ? result.data.recentRuns : []
+
+  return <StatusView agents={agents} recentRuns={recentRuns} />
+}
+
+export default function StatusPage() {
+  return (
+    <div className="min-h-screen px-6 py-8 md:px-8 md:py-10">
+      <header className="mb-10">
+        {/* Static header always prerenders */}
+      </header>
+      <Suspense fallback={<DashboardShimmer />}>
+        <StatusContent />
+      </Suspense>
+    </div>
+  )
 }
 ```
 
@@ -325,39 +357,39 @@ export async function UserProfilePage({ params }: { params: { id: string } }) {
 ```typescript
 // types/actions.types.ts
 export interface ActionResponse<T = unknown> {
-  success: boolean
-  data?: T
-  error?: string
-  fieldErrors?: Record<string, string[]>
+  success: boolean;
+  data?: T;
+  error?: string;
+  fieldErrors?: Record<string, string[]>;
 }
 
 // actions/users.actions.ts
-'use server'
+("use server");
 
-import { z } from 'zod'
-import { userService } from '@/services/users.service'
-import type { ActionResponse } from '@/types/actions.types'
+import { z } from "zod";
+import { userService } from "@/services/users.service";
+import type { ActionResponse } from "@/types/actions.types";
 
 const createUserSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-})
+  email: z.string().email("Invalid email address"),
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
 
 export async function createUserAction(
-  formData: FormData
+  formData: FormData,
 ): Promise<ActionResponse<User>> {
-  const parsed = createUserSchema.safeParse(Object.fromEntries(formData))
+  const parsed = createUserSchema.safeParse(Object.fromEntries(formData));
 
   if (!parsed.success)
     return {
       success: false,
-      error: 'Validation failed',
+      error: "Validation failed",
       fieldErrors: parsed.error.flatten().fieldErrors,
-    }
+    };
 
-  const user = await userService.create(parsed.data)
-  return { success: true, data: user }
+  const user = await userService.create(parsed.data);
+  return { success: true, data: user };
 }
 ```
 
@@ -386,9 +418,9 @@ Is the data client-only? (real-time, polling, WebSocket, background refetch)
 ```typescript
 // lib/queryKeys.ts
 export const notificationKeys = {
-  all: ['notifications'] as const,
-  live: (userId: string) => [...notificationKeys.all, 'live', userId] as const,
-}
+  all: ["notifications"] as const,
+  live: (userId: string) => [...notificationKeys.all, "live", userId] as const,
+};
 
 // hooks/useLiveNotifications.ts — TanStack Query ONLY because it is real-time polling
 export function useLiveNotifications(userId: string) {
@@ -397,7 +429,7 @@ export function useLiveNotifications(userId: string) {
     queryFn: () => notificationService.getLive(userId),
     staleTime: 30 * 1000,
     refetchInterval: 30 * 1000,
-  })
+  });
 }
 ```
 
@@ -415,22 +447,28 @@ export function useLiveNotifications(userId: string) {
 
 ```typescript
 // stores/auth.store.ts
-import { create } from 'zustand'
-import { immer } from 'zustand/middleware/immer'
+import { create } from "zustand";
+import { immer } from "zustand/middleware/immer";
 
 interface AuthState {
-  user: AuthUser | null
-  setUser: (user: AuthUser) => void
-  clearAuth: () => void
+  user: AuthUser | null;
+  setUser: (user: AuthUser) => void;
+  clearAuth: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
   immer((set) => ({
     user: null,
-    setUser: (user) => set((state) => { state.user = user }),
-    clearAuth: () => set((state) => { state.user = null }),
-  }))
-)
+    setUser: (user) =>
+      set((state) => {
+        state.user = user;
+      }),
+    clearAuth: () =>
+      set((state) => {
+        state.user = null;
+      }),
+  })),
+);
 ```
 
 ---
@@ -448,10 +486,10 @@ export const useAuthStore = create<AuthState>()(
 ```typescript
 // lib/validations/login.schema.ts
 export const loginSchema = z.object({
-  email: z.string().email('Invalid email'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-})
-export type LoginFormValues = z.infer<typeof loginSchema>
+  email: z.string().email("Invalid email"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
+export type LoginFormValues = z.infer<typeof loginSchema>;
 ```
 
 ---
@@ -467,34 +505,35 @@ export type LoginFormValues = z.infer<typeof loginSchema>
 
 ```typescript
 // lib/utils.ts
-import { clsx, type ClassValue } from 'clsx'
-import { twMerge } from 'tailwind-merge'
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs));
 }
 
 // ✅ Good — cva for variants
-import { cva, type VariantProps } from 'class-variance-authority'
+import { cva, type VariantProps } from "class-variance-authority";
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center rounded-md font-medium transition-colors',
+  "inline-flex items-center justify-center rounded-md font-medium transition-colors",
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
-        outline: 'border border-input bg-transparent hover:bg-accent',
-        aceternity: 'relative overflow-hidden border border-white/20 bg-black text-white',
+        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        outline: "border border-input bg-transparent hover:bg-accent",
+        aceternity:
+          "relative overflow-hidden border border-white/20 bg-black text-white",
       },
       size: {
-        sm: 'h-8 px-3 text-sm',
-        md: 'h-10 px-4',
-        lg: 'h-12 px-6 text-lg',
+        sm: "h-8 px-3 text-sm",
+        md: "h-10 px-4",
+        lg: "h-12 px-6 text-lg",
       },
     },
-    defaultVariants: { variant: 'default', size: 'md' },
-  }
-)
+    defaultVariants: { variant: "default", size: "md" },
+  },
+);
 ```
 
 ---
@@ -553,8 +592,8 @@ const envSchema = z.object({
   NEXT_PUBLIC_API_URL: z.string().url(),
   AUTH_SECRET: z.string().min(32),
   DATABASE_URL: z.string().url(),
-})
-export const env = envSchema.parse(process.env)
+});
+export const env = envSchema.parse(process.env);
 ```
 
 ---
@@ -644,7 +683,10 @@ export function HeroSection() {
 - ALWAYS mock external API calls and Server Actions in tests. NEVER hit real endpoints.
 - ALWAYS mock Framer Motion in tests to avoid animation-related test flakiness:
   ```typescript
-  vi.mock('framer-motion', () => ({ motion: { div: 'div', span: 'span' }, AnimatePresence: ({ children }) => children }))
+  vi.mock("framer-motion", () => ({
+    motion: { div: "div", span: "span" },
+    AnimatePresence: ({ children }) => children,
+  }));
   ```
 - Aim for >80% coverage on business-critical services and utilities.
 - Test file structure mirrors source file structure.

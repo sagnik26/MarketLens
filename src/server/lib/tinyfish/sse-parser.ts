@@ -2,7 +2,16 @@
 
 import type { TinyFishSSEEvent, TinyFishSSEResult } from "./tinyfish.types";
 
-export async function parseSSEStream(response: Response): Promise<TinyFishSSEResult> {
+export type SSEEventCallback = (event: TinyFishSSEEvent) => void;
+
+/**
+ * Parses the SSE stream and calls onEvent for each parsed event, then returns the full result.
+ * Use this when you need to forward events (e.g. STREAMING_URL) to the client while the run is in progress.
+ */
+export async function parseSSEStreamWithCallbacks(
+  response: Response,
+  onEvent: SSEEventCallback,
+): Promise<TinyFishSSEResult> {
   if (!response.body) {
     return {
       success: false,
@@ -22,6 +31,7 @@ export async function parseSSEStream(response: Response): Promise<TinyFishSSERes
   let finalResult: unknown = null;
   let failed = false;
   let failureReason: string | null = null;
+  let streamingUrl: string | null = null;
 
   try {
     // eslint-disable-next-line no-constant-condition
@@ -44,6 +54,7 @@ export async function parseSSEStream(response: Response): Promise<TinyFishSSERes
         try {
           const event = JSON.parse(jsonString) as TinyFishSSEEvent;
           events.push(event);
+          onEvent(event);
 
           if (
             event.type === "ERROR" ||
@@ -62,6 +73,14 @@ export async function parseSSEStream(response: Response): Promise<TinyFishSSERes
           if (event.type === "COMPLETE" && event.resultJson !== undefined && event.resultJson !== null) {
             finalResult = event.resultJson;
           }
+          const urlFromEvent = event.streaming_url ?? event.streamingUrl;
+          if (
+            (event.type === "STREAMING_URL" || event.streaming_url != null || event.streamingUrl != null) &&
+            typeof urlFromEvent === "string" &&
+            !streamingUrl
+          ) {
+            streamingUrl = urlFromEvent;
+          }
         } catch {
           // Swallow malformed chunks; they should not crash the stream parser
         }
@@ -79,6 +98,11 @@ export async function parseSSEStream(response: Response): Promise<TinyFishSSERes
     resultJson: finalResult,
     error: failureReason,
     rawEvents: events,
+    streamingUrl: streamingUrl ?? undefined,
   };
+}
+
+export async function parseSSEStream(response: Response): Promise<TinyFishSSEResult> {
+  return parseSSEStreamWithCallbacks(response, () => {});
 }
 

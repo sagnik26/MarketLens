@@ -14,7 +14,7 @@ export default function CompetitorRadarPage() {
           Competitor Radar
         </h1>
         <p className="mt-3 max-w-2xl text-zinc-600 dark:text-zinc-400">
-          Add competitors and run scans. Select one or multiple to run a single scan or batch scans.
+          Add competitors and run scans across pricing, jobs, Product Hunt, and feature pages whenever you&apos;re ready.
         </p>
       </header>
 

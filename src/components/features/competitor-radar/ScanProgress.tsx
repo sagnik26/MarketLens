@@ -57,7 +57,7 @@ export function ScanProgress({
             onClick={onComplete}
             className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-violet-500"
           >
-            Done
+            Ok
           </button>
         )}
       </div>

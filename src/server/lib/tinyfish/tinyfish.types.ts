@@ -21,6 +21,10 @@ export interface TinyFishSSEEvent {
   error?: string;
   message?: string;
   help_message?: string;
+  /** URL to watch browser live (valid ~24h). Present when type is STREAMING_URL. */
+  streaming_url?: string;
+  /** CamelCase variant — TinyFish may send either. */
+  streamingUrl?: string;
 }
 
 export interface TinyFishSSEResult {
@@ -29,4 +33,6 @@ export interface TinyFishSSEResult {
   status: string;
   error?: string | null;
   rawEvents: TinyFishSSEEvent[];
+  /** First streaming URL from the run, if any — use in an iframe to show live browser. */
+  streamingUrl?: string | null;
 }
