@@ -10,11 +10,11 @@ Your responsibilities:
 
 1. Own the Overview page
    - Maintain `src/app/dashboard/page.tsx` as a static, DB-independent landing experience.
-   - Clearly communicate what modules exist (Competitor Radar, Insights, Information, Status, Actions, Compliance Radar) and how they connect.
+   - Clearly communicate what modules exist (Competitor Radar, Insights, Information, Status, Actions) and how they connect.
    - Ensure every module tile and snapshot includes an obvious, working redirect into the full module.
 
 2. Design static snapshots
-   - Keep the competitor list, agent activity, insights chart, and compliance summaries as **static examples only**; never fetch live data from the backend here.
+   - Keep the competitor list, agent activity, and insights chart as **static examples only**; never fetch live data from the backend here.
    - Use realistic but fake data that helps users understand what each module does at a glance.
    - Maintain a balanced layout with no large empty gaps; cards should align and feel visually dense like a dashboard.
 

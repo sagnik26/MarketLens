@@ -50,9 +50,9 @@ async function InsightsContent() {
           </p>
         </div>
 
-        <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-          <div>
-            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Insights by channel</h3>
+        <div className="mt-10 space-y-6">
+          <section>
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Insights by channel</h2>
             {insights.length === 0 ? (
               <div className="mt-4">
                 <EmptyState
@@ -99,23 +99,27 @@ async function InsightsContent() {
                 })}
               </div>
             )}
-          </div>
+          </section>
 
-          <div className="flex items-stretch">
+          <section>
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Summary</h2>
             {insights.length === 0 ? (
-              <EmptyState
-                title="No insights available"
-                description="Once TinyFish-driven scans are stored, this panel will reflect real signal trends and recommended actions."
-              />
+              <div className="mt-3">
+                <EmptyState
+                  title="No insights available"
+                  description="Once TinyFish-driven scans are stored, this panel will reflect real signal trends and recommended actions."
+                />
+              </div>
             ) : (
-              <div className="flex w-full flex-col justify-between rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-zinc-700 dark:border-neutral-700 dark:bg-neutral-900/60 dark:text-zinc-200">
+              <div className="mt-3 flex w-full flex-col rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-zinc-700 dark:border-neutral-700 dark:bg-neutral-900/60 dark:text-zinc-200">
                 <div>
-                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                    Summary
-                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {insights.length} insight{insights.length === 1 ? "" : "s"} derived from recent signals across{" "}
+                    {allChannels.length - 1} channels.
+                  </p>
                   <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                    {insights.length} insight{insights.length === 1 ? "" : "s"} derived from recent
-                    signals across {allChannels.length - 1} channels.
+                    Channels with the highest signal volume appear with stronger lines in the trend chart above and are good
+                    candidates for deeper investigation this week.
                   </p>
                 </div>
                 <ul className="mt-3 space-y-1 text-xs text-zinc-600 dark:text-zinc-300">
@@ -142,7 +146,7 @@ async function InsightsContent() {
                 </ul>
               </div>
             )}
-          </div>
+          </section>
         </div>
       </section>
     </>

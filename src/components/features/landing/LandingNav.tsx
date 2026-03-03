@@ -23,12 +23,6 @@ export function LandingNav() {
             Competitor Radar
           </Link>
           <Link
-            href="/dashboard/actions/compliance"
-            className="text-sm font-medium text-neutral-300 no-underline transition hover:text-white"
-          >
-            Compliance Radar
-          </Link>
-          <Link
             href="/dashboard"
             className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-900 no-underline transition hover:bg-neutral-100"
           >

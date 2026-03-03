@@ -1,4 +1,4 @@
-/** Information page: sections for Competitor Radar and Compliance Radar, backed by backend summary. */
+/** Information page: sections for Competitor Radar (compliance section hidden for now). */
 
 import { Suspense } from "react";
 import Link from "next/link";
@@ -77,26 +77,7 @@ async function InformationContent() {
           </div>
         </section>
 
-        {/* Compliance Radar section */}
-        <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
-          <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Compliance Radar</h2>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                Summaries of BSE/NSE circulars and other regulatory notices relevant to your product.
-              </p>
-            </div>
-          </header>
-
-          <div className="mt-5">
-            <EmptyState
-              title="No compliance summaries yet"
-              description="Compliance Radar will surface short briefings for each relevant circular, with links back to the original BSE/NSE notice. This section will populate once compliance scans are enabled."
-              actionHref="/dashboard/actions/compliance"
-              actionLabel="Open Compliance Radar"
-            />
-          </div>
-        </section>
+        {/* Compliance Radar section intentionally hidden for now */}
       </div>
     </>
   );
@@ -114,7 +95,7 @@ export default function InformationPage() {
           Information
         </h1>
         <p className="mt-3 max-w-xl text-zinc-600 dark:text-zinc-400">
-          Detailed information for each radar: competitor signals by channel, plus compliance summaries.
+          Detailed information for each radar: competitor signals by channel.
         </p>
       </header>
 

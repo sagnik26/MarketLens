@@ -21,21 +21,6 @@ const FEATURES: HoverEffectItem[] = [
     ),
   },
   {
-    title: "Compliance Radar",
-    description:
-      "BSE and NSE circulars in one place. Stay on top of regulatory updates without chasing PDFs.",
-    badge: "In preview",
-    badgeTone: "secondary",
-    link: (
-      <Link
-        href="/dashboard/actions/compliance"
-        className="inline-flex items-center text-sm font-medium text-violet-400 hover:text-violet-300 no-underline"
-      >
-        View Compliance Radar →
-      </Link>
-    ),
-  },
-  {
     title: "Signals & Alerts",
     description:
       "Get notified when something changes. Prioritize what matters and skip the noise.",

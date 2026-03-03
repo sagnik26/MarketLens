@@ -325,14 +325,21 @@ export function CompetitorManageView() {
       [SourceChannel.REVIEWS]: 0,
     };
 
-    for (const summary of channelSummaries) {
-      for (const channel of summary.channels) {
-        totals[channel.channel] += channel.totalSignals;
-      }
+    // Count how many competitors are configured for each channel (so filters
+    // always reflect visible cards, even before any scans have produced data).
+    for (const competitor of competitors) {
+      const channelsForCompetitor =
+        competitor.channels && competitor.channels.length > 0
+          ? competitor.channels
+          : [SourceChannel.PRICING];
+
+      channelsForCompetitor.forEach((ch) => {
+        totals[ch] += 1;
+      });
     }
 
     return totals;
-  }, [channelSummaries]);
+  }, [competitors]);
 
   const filteredCompetitors = useMemo(() => {
     if (activeChannel === "all") return competitors;
@@ -352,12 +359,12 @@ export function CompetitorManageView() {
 
   return (
     <div className="space-y-8">
-      {/* Toolbar: source channels + add competitor */}
-      <section className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="flex flex-col gap-2">
-          <span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Source channels
-          </span>
+      {/* Toolbar: filters + actions in a single row */}
+      <section className="space-y-2">
+        <span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+          Source channels
+        </span>
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -394,91 +401,90 @@ export function CompetitorManageView() {
               </button>
             ))}
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={openAddModal}
-            className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-violet-500"
-          >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2.5}
-              aria-hidden
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={openAddModal}
+              className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-violet-500"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 4.5v15m7.5-7.5h-15"
-              />
-            </svg>
-            Add competitor
-          </button>
-          <button
-            type="button"
-            disabled={competitors.length === 0 || loading || runningScans.length > 0}
-            onClick={() => {
-              if (competitors.length === 0) return;
-              const competitorIds = competitors.map((c) => c.id);
-              const allChannels = new Set<SourceChannelType>();
-              competitors.forEach((c) => {
-                if (c.channels && c.channels.length) {
-                  c.channels.forEach((ch) => allChannels.add(ch));
-                } else {
-                  allChannels.add(SourceChannel.PRICING);
-                }
-              });
-          const groupId = `all-${Date.now()}`;
-          const competitorIdToScanId: Record<string, string> = {};
-          competitors.forEach((c, index) => {
-            const scanId = addScan(c.id, c.name, "all", groupId);
-            competitorIdToScanId[c.id] = scanId;
-            if (index === 0) {
-              updateScanEvents(scanId, ["Calling scan API for all competitors…"]);
-            }
-          });
-
-              fetch("/api/v1/scan/run/stream", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  competitorIds,
-                  channels: Array.from(allChannels),
-                }),
-              })
-                .then((res) => {
-                  if (!res.ok) {
-                    return res.json().then((data: { error?: { message?: string } }) => {
-                      const errMsg = data?.error?.message ?? `HTTP ${res.status}`;
-                      Object.values(competitorIdToScanId).forEach((scanId) => {
-                        if (getScan(scanId)) {
-                          updateScanEvents(scanId, ["Error: " + errMsg]);
-                          completeScan(scanId, "failed");
-                        }
-                      });
-                    });
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.5}
+                aria-hidden
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 4.5v15m7.5-7.5h-15"
+                />
+              </svg>
+              Add competitor
+            </button>
+            <button
+              type="button"
+              disabled={competitors.length === 0 || loading || runningScans.length > 0}
+              onClick={() => {
+                if (competitors.length === 0) return;
+                const competitorIds = competitors.map((c) => c.id);
+                const allChannels = new Set<SourceChannelType>();
+                competitors.forEach((c) => {
+                  if (c.channels && c.channels.length) {
+                    c.channels.forEach((ch) => allChannels.add(ch));
+                  } else {
+                    allChannels.add(SourceChannel.PRICING);
                   }
-                  consumeScanStream(competitorIdToScanId, res, "All scans finished");
-                })
-                .catch((err: Error) => {
-                  Object.values(competitorIdToScanId).forEach((scanId) => {
-                    if (getScan(scanId)) {
-                      updateScanEvents(scanId, [
-                        "Error: " + String(err?.message ?? err),
-                      ]);
-                      completeScan(scanId, "failed");
-                    }
-                  });
                 });
-            }}
-            className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-800 transition hover:border-violet-300 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-100 dark:hover:border-violet-700"
-          >
-            Run all scans
-          </button>
+                const groupId = `all-${Date.now()}`;
+                const competitorIdToScanId: Record<string, string> = {};
+                competitors.forEach((c, index) => {
+                  const scanId = addScan(c.id, c.name, "all", groupId);
+                  competitorIdToScanId[c.id] = scanId;
+                  if (index === 0) {
+                    updateScanEvents(scanId, ["Calling scan API for all competitors…"]);
+                  }
+                });
+
+                fetch("/api/v1/scan/run/stream", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    competitorIds,
+                    channels: Array.from(allChannels),
+                  }),
+                })
+                  .then((res) => {
+                    if (!res.ok) {
+                      return res.json().then((data: { error?: { message?: string } }) => {
+                        const errMsg = data?.error?.message ?? `HTTP ${res.status}`;
+                        Object.values(competitorIdToScanId).forEach((scanId) => {
+                          if (getScan(scanId)) {
+                            updateScanEvents(scanId, ["Error: " + errMsg]);
+                            completeScan(scanId, "failed");
+                          }
+                        });
+                      });
+                    }
+                    consumeScanStream(competitorIdToScanId, res, "All scans finished");
+                  })
+                  .catch((err: Error) => {
+                    Object.values(competitorIdToScanId).forEach((scanId) => {
+                      if (getScan(scanId)) {
+                        updateScanEvents(scanId, [
+                          "Error: " + String(err?.message ?? err),
+                        ]);
+                        completeScan(scanId, "failed");
+                      }
+                    });
+                  });
+              }}
+              className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-800 transition hover:border-violet-300 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-100 dark:hover:border-violet-700"
+            >
+              Run all scans
+            </button>
+          </div>
         </div>
       </section>
 

@@ -18,7 +18,7 @@ export interface ScanRun {
 }
 
 export interface AgentStatus {
-  name: "scan-agent" | "insight-agent" | "compliance-agent";
+  name: "scan-agent" | "insight-agent";
   currentRun?: ScanRun;
   lastRun?: ScanRun;
   queueSize: number;

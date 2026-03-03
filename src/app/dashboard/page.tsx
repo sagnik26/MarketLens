@@ -30,7 +30,6 @@ const SAMPLE_COMPETITORS = [
 const SAMPLE_AGENTS = [
   { name: "scan-agent", status: "Running", detail: "YC Jobs · pricing + jobs" },
   { name: "insight-agent", status: "Idle", detail: "Waiting for new scans" },
-  { name: "compliance-agent", status: "Idle", detail: "No circulars in queue" },
 ] as const;
 
 const TOTAL_AGENTS: number = SAMPLE_AGENTS.length;
@@ -79,7 +78,7 @@ export default function DashboardOverviewPage() {
         </h1>
         <p className="mt-3 max-w-2xl text-zinc-600 dark:text-zinc-400">
           High-level map of MarketLens modules. Use these tiles to jump into Competitor Radar, Insights,
-          Information, Status, and Compliance Radar.
+          Information, and Status.
         </p>
       </header>
 
@@ -112,39 +111,21 @@ export default function DashboardOverviewPage() {
         </Link>
 
         <Link
-          href="/dashboard/actions/compliance"
-          className="group flex flex-col rounded-xl border border-neutral-200 bg-white p-6 transition hover:border-cyan-200 hover:shadow-[0_0_25px_-8px_rgba(8,145,178,0.25)] dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-cyan-800"
-        >
-          <span className="text-sm font-medium text-cyan-700 dark:text-cyan-300">
-            Regulatory
-          </span>
-          <span className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400">
-            Compliance Radar
-          </span>
-          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-            Track BSE/NSE circulars and other regulatory changes that could impact your product, with links
-            back to primary sources.
-          </p>
-          <span className="mt-4 text-sm font-medium text-cyan-600 dark:text-cyan-400">
-            Go to Compliance Radar →
-          </span>
-        </Link>
-
-        <Link
-          href="/dashboard/insights"
-          className="group flex flex-col rounded-xl border border-neutral-200 bg-white p-6 transition hover:border-emerald-200 hover:shadow-[0_0_25px_-8px_rgba(16,185,129,0.25)] dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-emerald-800"
+          href="/dashboard/status"
+          className="group flex flex-col rounded-xl border border-neutral-200 bg-white p-6 transition hover:border-amber-200 hover:shadow-[0_0_25px_-8px_rgba(245,158,11,0.25)] dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-amber-800"
         >
           <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
-            Analytics
+            Live view
           </span>
           <span className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
-            Insights
+            Status
           </span>
           <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-            See cross-competitor signal trends over time and prioritized insights grouped by source channel.
+            See which agents are running right now, active scans from Competitor Radar, and a history of recent
+            runs.
           </p>
           <span className="mt-4 text-sm font-medium text-emerald-600 dark:text-emerald-400">
-            Go to Insights →
+            Go to Status →
           </span>
         </Link>
 
@@ -168,42 +149,41 @@ export default function DashboardOverviewPage() {
         </Link>
 
         <Link
-          href="/dashboard/status"
-          className="group flex flex-col rounded-xl border border-neutral-200 bg-white p-6 transition hover:border-amber-200 hover:shadow-[0_0_25px_-8px_rgba(245,158,11,0.25)] dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-amber-800"
+          href="/dashboard/insights"
+          className="group flex flex-col rounded-xl border border-neutral-200 bg-white p-6 transition hover:border-emerald-200 hover:shadow-[0_0_25px_-8px_rgba(16,185,129,0.25)] dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-emerald-800"
         >
-          <span className="text-sm font-medium text-amber-700 dark:text-amber-300">
-            Live view
+          <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+            Analytics
           </span>
-          <span className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-amber-600 dark:group-hover:text-amber-400">
-            Status
+          <span className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
+            Insights
           </span>
           <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-            See which agents are running right now, active scans from Competitor Radar, and a history of recent
-            runs.
+            See cross-competitor signal trends over time and prioritized insights grouped by source channel.
           </p>
-          <span className="mt-4 text-sm font-medium text-amber-600 dark:text-amber-400">
-            Go to Status →
+          <span className="mt-4 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+            Go to Insights →
           </span>
         </Link>
       </section>
 
       {/* Static snapshots of key modules (no live data) */}
       <section className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] items-stretch">
-        {/* Left column: Competitor + Compliance snapshots */}
-        <div className="flex flex-col gap-4">
-          <div className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
+        {/* Left column: Competitor snapshot */}
+        <div className="flex flex-col gap-4 h-full">
+          <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
             <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
               Competitor overview
             </h2>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
               Illustration of how Competitor Radar can represent your market—competitors, their URLs, active
-              channels, and detected signals.
+              channels, and detected signals. This static snapshot shows how the grid fills as you add more competitors.
             </p>
-            <ul className="mt-4 space-y-3 text-sm text-zinc-700 dark:text-zinc-200">
+            <ul className="mt-4 flex-1 grid grid-rows-3 gap-3 text-sm text-zinc-700 dark:text-zinc-200">
               {SAMPLE_COMPETITORS.map((c) => (
                 <li
                   key={c.name}
-                  className="flex items-start justify-between gap-3 rounded-xl border border-neutral-200 bg-neutral-50/80 px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-900/70"
+                  className="flex h-full flex-col justify-between gap-3 rounded-xl border border-neutral-200 bg-neutral-50/80 px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-900/70"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
@@ -237,40 +217,7 @@ export default function DashboardOverviewPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-neutral-200 bg-white p-5 text-sm dark:border-neutral-800 dark:bg-neutral-900/50">
-            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-              Compliance snapshot
-            </h2>
-            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-              A small, static example of how Compliance Radar might summarize recent circulars and notices.
-            </p>
-            <ul className="mt-3 space-y-2 text-xs text-zinc-700 dark:text-zinc-200">
-              <li className="rounded-lg border border-neutral-200 bg-neutral-50/80 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-900/70">
-                <p className="text-[13px] font-medium text-zinc-900 dark:text-zinc-100">
-                  BSE circular on disclosure norms
-                </p>
-                <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  Highlights new disclosure requirements for SaaS revenue recognition.
-                </p>
-              </li>
-              <li className="rounded-lg border border-neutral-200 bg-neutral-50/80 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-900/70">
-                <p className="text-[13px] font-medium text-zinc-900 dark:text-zinc-100">
-                  NSE clarification on data residency
-                </p>
-                <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  Notes stricter expectations for customer data storage regions.
-                </p>
-              </li>
-            </ul>
-            <div className="mt-3 text-right">
-              <Link
-                href="/dashboard/actions/compliance"
-                className="text-xs font-medium text-cyan-600 hover:text-cyan-500 dark:text-cyan-400"
-              >
-                Open Compliance Radar →
-              </Link>
-            </div>
-          </div>
+          {/* Compliance snapshot intentionally hidden for now */}
         </div>
 
         {/* Right column: Status + Insights snapshots */}
