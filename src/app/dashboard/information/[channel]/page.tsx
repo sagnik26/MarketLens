@@ -11,7 +11,8 @@ export const dynamic = "force-dynamic";
 interface InformationChannelPageProps {
   /** Next 15 passes params as a Promise that must be awaited in RSCs. */
   params: Promise<{ channel: string }>;
-  searchParams?: { competitorId?: string };
+  /** Next 15 also passes searchParams as a Promise. */
+  searchParams?: Promise<{ competitorId?: string }>;
 }
 
 function isSourceChannel(value: string): value is SourceChannelType {
@@ -25,7 +26,7 @@ async function InformationChannelContent({ params, searchParams }: InformationCh
   }
 
   const channel = rawChannel as SourceChannelType;
-  const competitorId = searchParams?.competitorId;
+  const competitorId = searchParams ? (await searchParams).competitorId : undefined;
 
   const { label, changes } = await informationService.getChannelDetails({ channel, competitorId });
 
