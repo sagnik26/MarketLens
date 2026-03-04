@@ -40,44 +40,46 @@ export const battlecardService = {
         c.changeType === ChangeType.FEATURE_REMOVE,
     );
 
-    const sections: BattlecardSection[] = [
-      {
-        id: "recent",
-        title: "Recent moves",
-        description: "Latest detected signals across all tracked sources.",
-        changes: changes.slice(0, 12),
-      },
-      {
-        id: "pricing",
-        title: "Pricing",
-        description: "Changes related to plans, tiers, limits, or packaging.",
-        changes: pricingChanges.slice(0, 12),
-      },
-      {
-        id: "features",
-        title: "Feature signals",
-        description: "Detected feature adds/removals and capability updates.",
-        changes: featuresChanges.slice(0, 12),
-      },
-      {
-        id: "jobs",
-        title: "Hiring signals",
-        description: "Signals from job postings that may indicate direction.",
-        changes: byPageType(SourceChannel.JOBS).slice(0, 12),
-      },
-      {
-        id: "changelog",
-        title: "Changelog/release notes",
-        description: "Recent product updates and releases.",
-        changes: byPageType(SourceChannel.CHANGELOG).slice(0, 12),
-      },
-      {
-        id: "reviews",
-        title: "Reviews",
-        description: "Trends and pain points surfaced from customer reviews.",
-        changes: byPageType(SourceChannel.REVIEWS).slice(0, 12),
-      },
-    ].filter((s) => s.changes.length > 0);
+    const sections: BattlecardSection[] = (
+      [
+        {
+          id: "recent" as const,
+          title: "Recent moves",
+          description: "Latest detected signals across all tracked sources.",
+          changes: changes.slice(0, 12),
+        },
+        {
+          id: "pricing" as const,
+          title: "Pricing",
+          description: "Changes related to plans, tiers, limits, or packaging.",
+          changes: pricingChanges.slice(0, 12),
+        },
+        {
+          id: "features" as const,
+          title: "Feature signals",
+          description: "Detected feature adds/removals and capability updates.",
+          changes: featuresChanges.slice(0, 12),
+        },
+        {
+          id: "jobs" as const,
+          title: "Hiring signals",
+          description: "Signals from job postings that may indicate direction.",
+          changes: byPageType(SourceChannel.JOBS).slice(0, 12),
+        },
+        {
+          id: "changelog" as const,
+          title: "Changelog/release notes",
+          description: "Recent product updates and releases.",
+          changes: byPageType(SourceChannel.CHANGELOG).slice(0, 12),
+        },
+        {
+          id: "reviews" as const,
+          title: "Reviews",
+          description: "Trends and pain points surfaced from customer reviews.",
+          changes: byPageType(SourceChannel.REVIEWS).slice(0, 12),
+        },
+      ] satisfies BattlecardSection[]
+    ).filter((s) => s.changes.length > 0);
 
     return { competitor, sections };
   },
