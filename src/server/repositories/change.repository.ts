@@ -18,6 +18,13 @@ interface FindRecentArgs {
   pageType?: SourceChannel;
 }
 
+interface FindByCompetitorArgs {
+  companyId: string;
+  competitorId: string;
+  limit?: number;
+  pageType?: SourceChannel;
+}
+
 function toBackendChange(doc: IChange): BackendChange {
   return {
     id: doc._id.toString(),
@@ -62,6 +69,30 @@ export const changeRepository = {
     const safeLimit = Math.min(limit, 500);
     const filter: Record<string, unknown> = {
       companyId: new mongoose.Types.ObjectId(companyId),
+    };
+    if (pageType) {
+      filter.pageType = pageType;
+    }
+
+    const rows = await ChangeModel.find(filter)
+      .sort({ detectedAt: -1 })
+      .limit(safeLimit)
+      .lean<IChange[]>();
+
+    return rows.map((doc) => toBackendChange(doc as unknown as IChange));
+  },
+
+  async findByCompetitor({
+    companyId,
+    competitorId,
+    limit = 200,
+    pageType,
+  }: FindByCompetitorArgs): Promise<BackendChange[]> {
+    await dbConnect();
+    const safeLimit = Math.min(limit, 500);
+    const filter: Record<string, unknown> = {
+      companyId: new mongoose.Types.ObjectId(companyId),
+      competitorId,
     };
     if (pageType) {
       filter.pageType = pageType;
