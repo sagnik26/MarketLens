@@ -1,4 +1,4 @@
-# MarketLens
+# **Project**: MarketLens
 
 AI Product Manager intelligence platform for B2B SaaS companies. MarketLens watches the web for competitor moves, pricing changes, job signals, and compliance alerts, and surfaces structured insights with optional Jira/Linear integration.
 
@@ -35,15 +35,15 @@ AI Product Manager intelligence platform for B2B SaaS companies. MarketLens watc
 
    Edit `.env`:
 
-   | Variable | Required | Description |
-   |----------|----------|-------------|
-   | `MONGODB_URI` | Yes | MongoDB connection string; include DB name, e.g. `mongodb+srv://user:pass@cluster.mongodb.net/marketlens` |
-   | `JWT_ACCESS_SECRET` | Yes (production) | Min 32 characters; used to sign access tokens |
-   | `JWT_REFRESH_SECRET` | Yes (production) | Min 32 characters; used to sign refresh tokens |
-   | `TINYFISH_API_KEY` | For scans | API key for TinyFish (Competitor Radar / Compliance scans) |
-   | `REDIS_URL` | Optional | e.g. `redis://localhost:6379` |
-   | `JWT_ACCESS_EXPIRES_IN` | Optional | Default `15m` |
-   | `JWT_REFRESH_EXPIRES_IN` | Optional | Default `7d` |
+   | Variable                 | Required         | Description                                                                                               |
+   | ------------------------ | ---------------- | --------------------------------------------------------------------------------------------------------- |
+   | `MONGODB_URI`            | Yes              | MongoDB connection string; include DB name, e.g. `mongodb+srv://user:pass@cluster.mongodb.net/marketlens` |
+   | `JWT_ACCESS_SECRET`      | Yes (production) | Min 32 characters; used to sign access tokens                                                             |
+   | `JWT_REFRESH_SECRET`     | Yes (production) | Min 32 characters; used to sign refresh tokens                                                            |
+   | `TINYFISH_API_KEY`       | For scans        | API key for TinyFish (Competitor Radar / Compliance scans)                                                |
+   | `REDIS_URL`              | Optional         | e.g. `redis://localhost:6379`                                                                             |
+   | `JWT_ACCESS_EXPIRES_IN`  | Optional         | Default `15m`                                                                                             |
+   | `JWT_REFRESH_EXPIRES_IN` | Optional         | Default `7d`                                                                                              |
 
    Generate JWT secrets locally:
 
@@ -63,12 +63,12 @@ AI Product Manager intelligence platform for B2B SaaS companies. MarketLens watc
 
 ## Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start Next.js dev server |
-| `npm run build` | Production build |
-| `npm run start` | Start production server |
-| `npm run lint` | Run ESLint |
+| Command         | Description              |
+| --------------- | ------------------------ |
+| `npm run dev`   | Start Next.js dev server |
+| `npm run build` | Production build         |
+| `npm run start` | Start production server  |
+| `npm run lint`  | Run ESLint               |
 
 ## Tech stack
 
