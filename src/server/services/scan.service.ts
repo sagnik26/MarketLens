@@ -20,6 +20,7 @@ type CompetitorChannel =
   | typeof SourceChannel.JOBS
   | typeof SourceChannel.PRODUCT
   | typeof SourceChannel.FEATURES
+  | typeof SourceChannel.CHANGELOG
   | typeof SourceChannel.REVIEWS;
 
 interface CompetitorPageTarget {
@@ -109,6 +110,8 @@ function resolveGoal(channel: CompetitorChannel): string {
     case SourceChannel.FEATURES:
       return buildFeaturesGoal();
     case SourceChannel.PRODUCT:
+      return buildChangelogGoal();
+    case SourceChannel.CHANGELOG:
       return buildChangelogGoal();
     case SourceChannel.REVIEWS:
       return buildReviewsGoal();
@@ -400,6 +403,58 @@ export const scanService = {
             pageType,
             score: 0.5,
             tags: ["product", "changelog"],
+          };
+          insights.push(insight);
+        }
+      } else if (page.channel === SourceChannel.CHANGELOG) {
+        const changelogJson = raw as ChangelogResultJson;
+        if (!Array.isArray(changelogJson.entries) || changelogJson.entries.length === 0) continue;
+
+        const pageType = SourceChannel.CHANGELOG;
+        changelogJson.entries.forEach((entry, index) => {
+          if (!entry || !entry.title) return;
+
+          const detectedAt = entry.publishedAt && typeof entry.publishedAt === "string" ? entry.publishedAt : startedAt;
+          const isFeature = Boolean(entry.isFeatureAnnouncement);
+          const isPivot = Boolean(entry.isPivotSignal);
+
+          const change: BackendChange = {
+            id: `changelog-${page.competitorId}-${Date.now()}-${index}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            changeType: ChangeType.CHANGELOG,
+            signalType: isPivot
+              ? SignalType.THREAT
+              : isFeature
+                ? SignalType.OPPORTUNITY
+                : SignalType.INFORMATIONAL,
+            priority: isPivot ? Priority.HIGH : isFeature ? Priority.MEDIUM : Priority.LOW,
+            title: entry.title,
+            summary: entry.summary ?? null,
+            isRead: false,
+            isDismissed: false,
+            detectedAt,
+            pageType,
+            url: entry.url ?? page.url,
+          };
+          changes.push(change);
+        });
+
+        const totalEntries = changelogJson.entries.length;
+        if (totalEntries > 0) {
+          const insight: BackendInsight = {
+            id: `insight-changelog-${page.competitorId}-${Date.now()}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            title: `Recent changelog for ${page.competitorName}`,
+            briefing: `Detected ${totalEntries} recent changelog entr${totalEntries === 1 ? "y" : "ies"}.`,
+            signalType: SignalType.INFORMATIONAL,
+            priority: Priority.MEDIUM,
+            recommendedActions: [],
+            generatedAt: startedAt,
+            pageType,
+            score: 0.5,
+            tags: ["changelog"],
           };
           insights.push(insight);
         }
@@ -760,6 +815,58 @@ export const scanService = {
             pageType,
             score: 0.5,
             tags: ["product", "changelog"],
+          };
+          insights.push(insight);
+        }
+      } else if (page.channel === SourceChannel.CHANGELOG) {
+        const changelogJson = raw as ChangelogResultJson;
+        if (!Array.isArray(changelogJson.entries) || changelogJson.entries.length === 0) continue;
+
+        const pageType = SourceChannel.CHANGELOG;
+        changelogJson.entries.forEach((entry, index) => {
+          if (!entry || !entry.title) return;
+
+          const detectedAt = entry.publishedAt && typeof entry.publishedAt === "string" ? entry.publishedAt : startedAt;
+          const isFeature = Boolean(entry.isFeatureAnnouncement);
+          const isPivot = Boolean(entry.isPivotSignal);
+
+          const change: BackendChange = {
+            id: `changelog-${page.competitorId}-${Date.now()}-${index}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            changeType: ChangeType.CHANGELOG,
+            signalType: isPivot
+              ? SignalType.THREAT
+              : isFeature
+                ? SignalType.OPPORTUNITY
+                : SignalType.INFORMATIONAL,
+            priority: isPivot ? Priority.HIGH : isFeature ? Priority.MEDIUM : Priority.LOW,
+            title: entry.title,
+            summary: entry.summary ?? null,
+            isRead: false,
+            isDismissed: false,
+            detectedAt,
+            pageType,
+            url: entry.url ?? page.url,
+          };
+          changes.push(change);
+        });
+
+        const totalEntries = changelogJson.entries.length;
+        if (totalEntries > 0) {
+          const insight: BackendInsight = {
+            id: `insight-changelog-${page.competitorId}-${Date.now()}`,
+            competitorId: page.competitorId,
+            competitorName: page.competitorName,
+            title: `Recent changelog for ${page.competitorName}`,
+            briefing: `Detected ${totalEntries} recent changelog entr${totalEntries === 1 ? "y" : "ies"}.`,
+            signalType: SignalType.INFORMATIONAL,
+            priority: Priority.MEDIUM,
+            recommendedActions: [],
+            generatedAt: startedAt,
+            pageType,
+            score: 0.5,
+            tags: ["changelog"],
           };
           insights.push(insight);
         }

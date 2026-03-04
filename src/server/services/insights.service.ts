@@ -7,7 +7,8 @@ import type {
   InsightsSummary,
 } from "@/actions/insights.actions";
 import { changeRepository } from "@/server/repositories/change.repository";
-import { SourceChannel } from "@/constants";
+import { SourceChannel, SOURCE_CHANNEL_LABELS } from "@/constants";
+import type { SourceChannel as SourceChannelType } from "@/constants";
 
 const DEMO_COMPANY_ID = "000000000000000000000000";
 
@@ -34,7 +35,13 @@ export const insightsService = {
             ? "pricing"
             : chg.pageType === SourceChannel.FEATURES
               ? "features"
-              : "product signals";
+              : chg.pageType === SourceChannel.CHANGELOG
+                ? "changelog"
+                : chg.pageType === SourceChannel.PRODUCT
+                  ? "product"
+                  : chg.pageType === SourceChannel.REVIEWS
+                    ? "reviews"
+                    : "product signals";
 
       const title =
         chg.pageType === SourceChannel.JOBS
@@ -116,13 +123,9 @@ export const insightsService = {
       if (points.length === 0) continue;
 
       const label =
-        channelKey === SourceChannel.JOBS
-          ? "Jobs"
-          : channelKey === SourceChannel.PRICING
-            ? "Pricing"
-            : channelKey === SourceChannel.FEATURES
-              ? "Features"
-              : "Product Hunt";
+        channelKey in SOURCE_CHANNEL_LABELS
+          ? SOURCE_CHANNEL_LABELS[channelKey as SourceChannelType]
+          : "Other";
 
       trendSeries.push({
         id: channelKey,

@@ -21,6 +21,21 @@ const FEATURES: HoverEffectItem[] = [
     ),
   },
   {
+    title: "Insights",
+    description:
+      "See trends across competitors. Turn raw signals into concise, decision-ready summaries for your roadmap.",
+    badge: "Analytics",
+    badgeTone: "secondary",
+    link: (
+      <Link
+        href="/dashboard/insights"
+        className="inline-flex items-center text-sm font-medium text-violet-400 hover:text-violet-300 no-underline"
+      >
+        Open Insights →
+      </Link>
+    ),
+  },
+  {
     title: "Signals & Alerts",
     description:
       "Get notified when something changes. Prioritize what matters and skip the noise.",

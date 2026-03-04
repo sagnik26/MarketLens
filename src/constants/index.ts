@@ -42,6 +42,7 @@ export const SourceChannel = {
   JOBS: "jobs",
   PRODUCT: "product",
   FEATURES: "features",
+  CHANGELOG: "changelog",
   REVIEWS: "reviews",
 } as const;
 
@@ -52,5 +53,6 @@ export const SOURCE_CHANNEL_LABELS: Record<SourceChannel, string> = {
   [SourceChannel.JOBS]: "Job postings",
   [SourceChannel.PRODUCT]: "Product",
   [SourceChannel.FEATURES]: "Features pages",
+  [SourceChannel.CHANGELOG]: "Changelog/release notes",
   [SourceChannel.REVIEWS]: "Reviews",
 };

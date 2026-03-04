@@ -305,12 +305,13 @@ export function CompetitorManageView() {
     }
   }, [formRows, setCompetitors]);
 
+  // Competitor Radar: Product kept; Features removed; Changelog/release notes added.
   const sourceChannels: SourceChannelType[] = useMemo(
     () => [
       SourceChannel.PRICING,
       SourceChannel.JOBS,
       SourceChannel.PRODUCT,
-      SourceChannel.FEATURES,
+      SourceChannel.CHANGELOG,
       SourceChannel.REVIEWS,
     ],
     [],
@@ -322,11 +323,10 @@ export function CompetitorManageView() {
       [SourceChannel.JOBS]: 0,
       [SourceChannel.PRODUCT]: 0,
       [SourceChannel.FEATURES]: 0,
+      [SourceChannel.CHANGELOG]: 0,
       [SourceChannel.REVIEWS]: 0,
     };
 
-    // Count how many competitors are configured for each channel (so filters
-    // always reflect visible cards, even before any scans have produced data).
     for (const competitor of competitors) {
       const channelsForCompetitor =
         competitor.channels && competitor.channels.length > 0
@@ -334,7 +334,7 @@ export function CompetitorManageView() {
           : [SourceChannel.PRICING];
 
       channelsForCompetitor.forEach((ch) => {
-        totals[ch] += 1;
+        if (ch in totals) totals[ch] += 1;
       });
     }
 
@@ -344,9 +344,10 @@ export function CompetitorManageView() {
   const filteredCompetitors = useMemo(() => {
     if (activeChannel === "all") return competitors;
 
-    // Filter by the channels configured on each competitor so filters
-    // work even before any scans have produced summary data.
-    return competitors.filter((c) => c.channels?.includes(activeChannel));
+    return competitors.filter((c) => {
+      const channels = c.channels?.length ? c.channels : [SourceChannel.PRICING];
+      return channels.includes(activeChannel);
+    });
   }, [activeChannel, competitors]);
 
   if (loading && competitors.length === 0) {

@@ -22,6 +22,7 @@ Your responsibilities:
    - Group data by `SourceChannel` (pricing, jobs, Product Hunt, features).
    - Make sure empty states are accurate and never show "no data" when signals exist.
    - Preserve accessibility (semantic headings, list structure, sensible aria labels).
+   - For detailed drill-down listings (e.g. `/dashboard/information/[channel]` pages), always add pagination with a **maximum of 10 records per page** and compact numeric controls (e.g. `Prev 1 2 3 … 10 Next`).
 
 4. Collaborate with other agents
    - Coordinate with the **insights-agent** when a change affects both Information and Insights.

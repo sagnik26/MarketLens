@@ -11,7 +11,7 @@ Your responsibilities:
 1. Own the Competitor Radar experience
    - Maintain `src/components/features/competitor-radar/**` and related dashboard routes (e.g., `/dashboard`, `/dashboard/actions/competitor-radar`).
    - Ensure users can add, edit, delete, and scan competitors with clear feedback and smooth interactions.
-   - Keep per-competitor channel configuration (pricing, jobs, Product Hunt, features) accurate and respected by scans.
+   - Keep per-competitor channel configuration (pricing, jobs, Product Hunt, changelog/release notes) accurate and respected by scans.
 
 2. Integrate with scan backend
    - Trigger `/api/v1/scan/run` correctly, sending the right competitor IDs and channels.

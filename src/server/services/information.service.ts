@@ -41,6 +41,7 @@ export const informationService = {
       SourceChannel.JOBS,
       SourceChannel.PRODUCT,
       SourceChannel.FEATURES,
+      SourceChannel.CHANGELOG,
       SourceChannel.REVIEWS,
     ];
 
@@ -84,7 +85,9 @@ export const informationService = {
                   ? "Hiring"
                   : channel === SourceChannel.REVIEWS
                     ? "Reviews"
-                    : "Product",
+                    : channel === SourceChannel.CHANGELOG
+                      ? "Changelog"
+                      : "Product",
               focus: `${count} ${label.toLowerCase()} signal${count === 1 ? "" : "s"} detected. Latest: ${latest.title}`,
               lastScan: latest.detectedAt,
               channel,
@@ -107,6 +110,8 @@ export const informationService = {
   async getChannelDetails(params: {
     channel: SourceChannelType;
     competitorId?: string;
+    page?: number;
+    limit?: number;
   }): Promise<{
     channel: SourceChannelType;
     label: string;
@@ -119,8 +124,11 @@ export const informationService = {
       detectedAt: string;
       url?: string;
     }[];
+    total: number;
+    page: number;
+    totalPages: number;
   }> {
-    const { channel, competitorId } = params;
+    const { channel, competitorId, page = 1, limit = 10 } = params;
 
     const changes = await changeRepository.findRecentByCompany({
       companyId: DEMO_COMPANY_ID,
@@ -132,7 +140,16 @@ export const informationService = {
       ? changes.filter((chg) => chg.competitorId === competitorId)
       : changes;
 
-    const mapped = filtered.map((chg) => ({
+    const total = filtered.length;
+    const safeLimit = Math.max(1, Math.min(limit, 100));
+    const safePage = Math.max(1, page);
+    const totalPages = Math.max(1, Math.ceil(total / safeLimit));
+    const start = (safePage - 1) * safeLimit;
+    const end = start + safeLimit;
+
+    const paged = filtered.slice(start, end);
+
+    const mapped = paged.map((chg) => ({
       id: chg.id,
       competitorId: chg.competitorId,
       competitorName: chg.competitorName,
@@ -146,6 +163,9 @@ export const informationService = {
       channel,
       label: SOURCE_CHANNEL_LABELS[channel],
       changes: mapped,
+      total,
+      page: safePage,
+      totalPages,
     };
   },
 };
