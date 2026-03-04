@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import { informationService } from "@/server/services/information.service";
 import { SourceChannel, SOURCE_CHANNEL_LABELS, type SourceChannel as SourceChannelType } from "@/constants";
 import { DashboardShimmer } from "@/components/common";
+import { getServerAuthContext } from "@/server/lib/auth/server-context";
 
 export const dynamic = "force-dynamic";
 
@@ -31,8 +32,10 @@ async function InformationChannelContent({ params, searchParams }: InformationCh
   const competitorId = sp.competitorId;
   const pageFromQuery = sp.page ? Number(sp.page) : 1;
   const currentPage = Number.isFinite(pageFromQuery) && pageFromQuery > 0 ? pageFromQuery : 1;
+  const { companyId } = await getServerAuthContext();
 
   const { changes, total, page, totalPages } = await informationService.getChannelDetails({
+    companyId,
     channel,
     competitorId,
     page: currentPage,

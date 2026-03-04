@@ -32,10 +32,9 @@ export interface InformationSummary {
   competitorRadar: CompetitorRadarInformation;
   complianceRadar: ComplianceRadarInformation;
 }
-const DEMO_COMPANY_ID = "000000000000000000000000";
 
 export const informationService = {
-  async getSummary(): Promise<InformationSummary> {
+  async getSummary(companyId: string): Promise<InformationSummary> {
     const allChannels: SourceChannelType[] = [
       SourceChannel.PRICING,
       SourceChannel.JOBS,
@@ -46,13 +45,13 @@ export const informationService = {
     ];
 
     const { competitors } = await competitorRepository.findMany({
-      companyId: DEMO_COMPANY_ID,
+      companyId,
       page: 1,
       limit: 100,
     });
 
     const changes = await changeRepository.findRecentByCompany({
-      companyId: DEMO_COMPANY_ID,
+      companyId,
       limit: 500,
     });
 
@@ -108,6 +107,7 @@ export const informationService = {
   },
 
   async getChannelDetails(params: {
+    companyId: string;
     channel: SourceChannelType;
     competitorId?: string;
     page?: number;
@@ -128,10 +128,10 @@ export const informationService = {
     page: number;
     totalPages: number;
   }> {
-    const { channel, competitorId, page = 1, limit = 10 } = params;
+    const { companyId, channel, competitorId, page = 1, limit = 10 } = params;
 
     const changes = await changeRepository.findRecentByCompany({
-      companyId: DEMO_COMPANY_ID,
+      companyId,
       limit: 500,
       pageType: channel,
     });

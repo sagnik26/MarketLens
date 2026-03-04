@@ -4,17 +4,17 @@
 import type { ActionResponse } from "@/types/actions.types";
 import type { AgentStatus, ScanRun } from "@/types";
 import { scanRepository } from "@/server/repositories/scan.repository";
+import { getServerAuthContext } from "@/server/lib/auth/server-context";
 
 interface StatusSummary {
   agents: AgentStatus[];
   recentRuns: ScanRun[];
 }
 
-const DEMO_COMPANY_ID = "000000000000000000000000";
-
 export async function getStatusSummaryAction(): Promise<ActionResponse<StatusSummary>> {
+  const { companyId } = await getServerAuthContext();
   const { scanRuns } = await scanRepository.findMany({
-    companyId: DEMO_COMPANY_ID,
+    companyId,
     page: 1,
     limit: 20,
   });

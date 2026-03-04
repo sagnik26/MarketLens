@@ -4,11 +4,13 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { EmptyState, DashboardShimmer } from "@/components/common";
 import { informationService } from "@/server/services/information.service";
+import { getServerAuthContext } from "@/server/lib/auth/server-context";
 
 export const dynamic = "force-dynamic";
 
 async function InformationContent() {
-  const summary = await informationService.getSummary();
+  const { companyId } = await getServerAuthContext();
+  const summary = await informationService.getSummary(companyId);
 
   return (
     <>

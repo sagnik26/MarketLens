@@ -9,6 +9,7 @@ import { InsightsTrendChart } from "@/components/features/insights/InsightsTrend
 import { competitorRepository } from "@/server/repositories/competitor.repository";
 import { battlecardService } from "@/server/services/battlecard.service";
 import { timelineService } from "@/server/services/timeline.service";
+import { getServerAuthContext } from "@/server/lib/auth/server-context";
 
 type InsightsTab = "highlights" | "battlecards" | "timeline";
 
@@ -191,9 +192,9 @@ async function HighlightsTab() {
 }
 
 async function BattlecardsTab({ competitorId }: { competitorId?: string }) {
-  const DEMO_COMPANY_ID = "000000000000000000000000";
+  const { companyId } = await getServerAuthContext();
   const { competitors } = await competitorRepository.findMany({
-    companyId: DEMO_COMPANY_ID,
+    companyId,
     page: 1,
     limit: 100,
   });
@@ -202,7 +203,7 @@ async function BattlecardsTab({ competitorId }: { competitorId?: string }) {
 
   const data = selected
     ? await battlecardService
-        .getForCompetitor({ companyId: DEMO_COMPANY_ID, competitorId: selected })
+        .getForCompetitor({ companyId, competitorId: selected })
         .catch(() => null)
     : null;
 
@@ -326,9 +327,9 @@ async function BattlecardsTab({ competitorId }: { competitorId?: string }) {
 }
 
 async function TimelineTab({ competitorId }: { competitorId?: string }) {
-  const DEMO_COMPANY_ID = "000000000000000000000000";
+  const { companyId } = await getServerAuthContext();
   const { competitors } = await competitorRepository.findMany({
-    companyId: DEMO_COMPANY_ID,
+    companyId,
     page: 1,
     limit: 100,
   });
@@ -337,7 +338,7 @@ async function TimelineTab({ competitorId }: { competitorId?: string }) {
 
   const data = selected
     ? await timelineService
-        .getForCompetitor({ companyId: DEMO_COMPANY_ID, competitorId: selected, limit: 200 })
+        .getForCompetitor({ companyId, competitorId: selected, limit: 200 })
         .catch(() => null)
     : null;
 

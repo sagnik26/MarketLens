@@ -3,9 +3,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { useAuthStore, type CurrentUser } from "@/stores/auth.store";
 
 const OVERVIEW_ITEM = {
   href: "/dashboard",
@@ -140,11 +142,57 @@ function NavItem({ href, label, icon: Icon, isActive, nested }: NavItemProps) {
 
 export function DashboardNav() {
   const pathname = usePathname();
+  const router = useRouter();
+  const setUserInStore = useAuthStore((s) => s.setUser);
+  const clearAuth = useAuthStore((s) => s.clearAuth);
+  const [user, setUser] = useState<CurrentUser | null>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadUser() {
+      try {
+        const res = await fetch("/api/v1/users/me", { credentials: "include" });
+        if (!res.ok) {
+          if (!cancelled) setUser(null);
+          return;
+        }
+        const json = (await res.json().catch(() => ({}))) as {
+          success?: boolean;
+          data?: CurrentUser;
+        };
+        if (!cancelled && json.success && json.data) {
+          setUser(json.data);
+          setUserInStore(json.data);
+        }
+      } finally {
+        if (!cancelled) setLoadingUser(false);
+      }
+    }
+    loadUser();
+    return () => {
+      cancelled = true;
+    };
+  }, [setUserInStore]);
+
+  async function handleLogout() {
+    try {
+      await fetch("/api/v1/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // swallow error; we'll still redirect
+    } finally {
+      clearAuth();
+      router.push("/login");
+    }
+  }
 
   return (
     <aside
       className={cn(
-        "relative flex w-64 flex-col border-r",
+        "relative flex h-screen w-64 flex-col border-r overflow-hidden",
         "border-neutral-200 bg-gradient-to-b from-neutral-50/95 to-violet-50/30 dark:border-neutral-800/60 dark:from-neutral-950 dark:to-violet-950/20",
         "backdrop-blur-sm"
       )}
@@ -161,7 +209,7 @@ export function DashboardNav() {
         aria-hidden
       />
 
-      <div className="relative flex flex-1 flex-col p-5">
+      <div className="relative flex flex-1 min-h-0 flex-col p-5">
         <Link
           href="/"
           className="mb-8 flex items-center gap-3 rounded-xl px-3 py-2 transition hover:bg-violet-500/10 dark:hover:bg-white/5"
@@ -174,7 +222,7 @@ export function DashboardNav() {
           </span>
         </Link>
 
-        <nav className="flex flex-col gap-1">
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto pr-1">
           {/* Overview */}
           <NavItem
             href={OVERVIEW_ITEM.href}
@@ -218,11 +266,20 @@ export function DashboardNav() {
 
         <div className="mt-auto border-t border-neutral-200 dark:border-neutral-800/80 pt-5">
           <Link
-            href="/"
-            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-zinc-500 transition hover:bg-neutral-100 hover:text-zinc-700 dark:hover:bg-white/5 dark:hover:text-zinc-300"
+            href="/dashboard/profile"
+            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-neutral-100 dark:hover:bg-white/5"
           >
-            <IconHome className="h-5 w-5 shrink-0" />
-            Back to home
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-600 text-xs font-semibold text-white">
+              {(user?.name ?? user?.email ?? "?").slice(0, 2).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                {loadingUser ? "Loading…" : user?.name ?? "Unknown user"}
+              </p>
+              <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                {user?.email ?? ""}
+              </p>
+            </div>
           </Link>
         </div>
       </div>

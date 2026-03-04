@@ -7,12 +7,12 @@ import type { Competitor } from "@/components/features/competitor-radar/competit
 import { SourceChannel, type SourceChannel as SourceChannelType } from "@/constants";
 import { competitorService } from "@/server/services/competitor.service";
 import { competitorRepository } from "@/server/repositories/competitor.repository";
-
-const DEMO_COMPANY_ID = "000000000000000000000000";
+import { getServerAuthContext } from "@/server/lib/auth/server-context";
 
 /** Returns list of competitors for the authenticated company. Backed by MongoDB. */
 export async function getCompetitorsAction(): Promise<ActionResponse<Competitor[]>> {
-  const { competitors } = await competitorService.list({ page: 1, limit: 100 });
+  const { companyId } = await getServerAuthContext();
+  const { competitors } = await competitorService.list(companyId, { page: 1, limit: 100 });
   return { success: true, data: competitors as Competitor[] };
 }
 
@@ -35,7 +35,8 @@ export async function addCompetitorsAction(
   for (const input of valid) {
     let website = input.url.trim();
     if (website && !/^https?:\/\//i.test(website)) website = `https://${website}`;
-    const competitor = await competitorService.create({
+    const { companyId } = await getServerAuthContext();
+    const competitor = await competitorService.create(companyId, {
       name: input.name.trim(),
       website,
       logoUrl: null,
@@ -53,7 +54,8 @@ export async function deleteCompetitorAction(id: string): Promise<ActionResponse
     return { success: false, error: "Competitor id is required." };
   }
   try {
-    await competitorService.delete(id.trim());
+    const { companyId } = await getServerAuthContext();
+    await competitorService.delete(companyId, id.trim());
     return { success: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to delete competitor.";
@@ -82,8 +84,9 @@ export async function getCompetitorChannelSummaryAction(): Promise<ActionRespons
     SourceChannel.REVIEWS,
   ];
 
+  const { companyId } = await getServerAuthContext();
   const { competitors } = await competitorRepository.findMany({
-    companyId: DEMO_COMPANY_ID,
+    companyId,
     page: 1,
     limit: 100,
   });

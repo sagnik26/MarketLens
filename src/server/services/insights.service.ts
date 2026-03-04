@@ -10,13 +10,11 @@ import { changeRepository } from "@/server/repositories/change.repository";
 import { SourceChannel, SOURCE_CHANNEL_LABELS } from "@/constants";
 import type { SourceChannel as SourceChannelType } from "@/constants";
 
-const DEMO_COMPANY_ID = "000000000000000000000000";
-
 export const insightsService = {
-  async getSummary(): Promise<InsightsSummary> {
+  async getSummary(companyId: string): Promise<InsightsSummary> {
     // Pull recent changes and derive simple insights + trend from them.
     const changes = await changeRepository.findRecentByCompany({
-      companyId: DEMO_COMPANY_ID,
+      companyId,
       limit: 200,
     });
 

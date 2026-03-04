@@ -101,6 +101,16 @@ interface ChangelogResultJson {
   totalFound?: number;
 }
 
+function normalizeDetectedAt(raw: unknown, fallbackIso: string): string {
+  if (typeof raw === "string") {
+    const parsed = Date.parse(raw);
+    if (!Number.isNaN(parsed)) {
+      return new Date(parsed).toISOString();
+    }
+  }
+  return fallbackIso;
+}
+
 function resolveGoal(channel: CompetitorChannel): string {
   switch (channel) {
     case SourceChannel.PRICING:
@@ -119,8 +129,6 @@ function resolveGoal(channel: CompetitorChannel): string {
       return buildPricingGoal();
   }
 }
-
-const DEMO_COMPANY_ID = "000000000000000000000000";
 
 /** Event forwarded to the client during a streaming scan (includes page context). */
 export interface StreamingScanEvent {
@@ -143,7 +151,10 @@ export const scanService = {
    *
    * NOTE: This currently uses Promise.allSettled and does not persist to the database.
    */
-  async runCompetitorScan(pages: CompetitorPageTarget[]): Promise<RunCompetitorScanResult> {
+  async runCompetitorScan(
+    companyId: string,
+    pages: CompetitorPageTarget[],
+  ): Promise<RunCompetitorScanResult> {
     const startedAt = new Date().toISOString();
 
     const pageResults = await Promise.allSettled(
@@ -203,7 +214,7 @@ export const scanService = {
           if (!job || !job.title) return;
 
           const isNewSignal = Boolean(job.isNewProductSignal);
-          const detectedAt = job.postedAt && typeof job.postedAt === "string" ? job.postedAt : startedAt;
+          const detectedAt = normalizeDetectedAt(job.postedAt, startedAt);
 
           const change: BackendChange = {
             id: `job-${page.competitorId}-${Date.now()}-${index}`,
@@ -466,7 +477,7 @@ export const scanService = {
         reviewsJson.reviews.forEach((rev, index) => {
           if (!rev) return;
 
-          const detectedAt = rev.postedAt && typeof rev.postedAt === "string" ? rev.postedAt : startedAt;
+          const detectedAt = normalizeDetectedAt(rev.postedAt, startedAt);
           const summary = rev.summary ?? rev.pros ?? rev.cons ?? null;
 
           const change: BackendChange = {
@@ -514,7 +525,7 @@ export const scanService = {
     const totalCompetitors = new Set(pages.map((p) => p.competitorId)).size;
 
     const scanRun = await scanRepository.create({
-      companyId: DEMO_COMPANY_ID,
+      companyId,
       goalName: "competitor_radar_scan",
       status,
       startedAt,
@@ -527,7 +538,7 @@ export const scanService = {
 
     if (changes.length) {
       await changeRepository.createMany({
-        companyId: DEMO_COMPANY_ID,
+        companyId,
         scanRunId: scanRun.id,
         changes,
       });
@@ -541,6 +552,7 @@ export const scanService = {
    * so the client can show live progress and embed the streaming URL in an iframe.
    */
   async runCompetitorScanStreaming(
+    companyId: string,
     pages: CompetitorPageTarget[],
     onEvent: (event: StreamingScanEvent) => void,
   ): Promise<RunCompetitorScanResult> {
@@ -615,7 +627,7 @@ export const scanService = {
           if (!job || !job.title) return;
 
           const isNewSignal = Boolean(job.isNewProductSignal);
-          const detectedAt = job.postedAt && typeof job.postedAt === "string" ? job.postedAt : startedAt;
+          const detectedAt = normalizeDetectedAt(job.postedAt, startedAt);
 
           const change: BackendChange = {
             id: `job-${page.competitorId}-${Date.now()}-${index}`,
@@ -878,7 +890,7 @@ export const scanService = {
         reviewsJson.reviews.forEach((rev, index) => {
           if (!rev) return;
 
-          const detectedAt = rev.postedAt && typeof rev.postedAt === "string" ? rev.postedAt : startedAt;
+          const detectedAt = normalizeDetectedAt(rev.postedAt, startedAt);
           const summary = rev.summary ?? rev.pros ?? rev.cons ?? null;
 
           const change: BackendChange = {
@@ -926,7 +938,7 @@ export const scanService = {
     const totalCompetitors = new Set(pages.map((p) => p.competitorId)).size;
 
     const scanRun = await scanRepository.create({
-      companyId: DEMO_COMPANY_ID,
+      companyId,
       goalName: "competitor_radar_scan",
       status,
       startedAt,
@@ -939,7 +951,7 @@ export const scanService = {
 
     if (changes.length) {
       await changeRepository.createMany({
-        companyId: DEMO_COMPANY_ID,
+        companyId,
         scanRunId: scanRun.id,
         changes,
       });
