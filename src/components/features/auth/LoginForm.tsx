@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@/stores/auth.store";
 
@@ -10,7 +9,6 @@ interface LoginFormProps {
 }
 
 export function LoginForm({ redirect }: LoginFormProps) {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -40,6 +38,7 @@ export function LoginForm({ redirect }: LoginFormProps) {
         return;
       }
 
+      const target = redirect || "/dashboard";
       const meRes = await fetch("/api/v1/users/me", { credentials: "include" });
       if (meRes.ok) {
         const meJson = (await meRes.json().catch(() => ({}))) as {
@@ -50,7 +49,7 @@ export function LoginForm({ redirect }: LoginFormProps) {
           useAuthStore.getState().setUser(meJson.data);
         }
       }
-      router.push(redirect || "/dashboard");
+      window.location.assign(target);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Unexpected error. Please try again in a moment.",

@@ -2,11 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth.store";
 
 export function LandingNav() {
-  const router = useRouter();
   const { user, hydrated, setUser, clearAuth, setHydrated } = useAuthStore();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -51,7 +49,7 @@ export function LandingNav() {
     } finally {
       setMenuOpen(false);
       clearAuth();
-      router.push("/");
+      window.location.assign("/");
     }
   }
 

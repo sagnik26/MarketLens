@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuthStore } from "@/stores/auth.store";
 
 interface CurrentUser {
   id: string;
@@ -56,7 +57,8 @@ export default function ProfilePage() {
     } catch {
       // ignore
     } finally {
-      router.push("/");
+      useAuthStore.getState().clearAuth();
+      window.location.assign("/");
     }
   }
 

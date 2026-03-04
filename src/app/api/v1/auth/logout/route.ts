@@ -14,10 +14,11 @@ export const POST = withApiHandler(
     const response = apiSuccess({ success: true }, 200);
     response.headers.set(
       "Set-Cookie",
-      [
-        "access_token=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax; Secure",
-        "refresh_token=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax; Secure",
-      ].join(", "),
+      "access_token=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax; Secure",
+    );
+    response.headers.append(
+      "Set-Cookie",
+      "refresh_token=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax; Secure",
     );
     return response;
   },

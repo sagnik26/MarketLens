@@ -37,10 +37,11 @@ export const POST = withApiHandler(async (req: NextRequest) => {
 
   response.headers.set(
     "Set-Cookie",
-    [
-      `access_token=${accessToken}; Path=/; HttpOnly; SameSite=Lax; Secure`,
-      `refresh_token=${refreshToken}; Path=/; HttpOnly; SameSite=Lax; Secure`,
-    ].join(", "),
+    `access_token=${accessToken}; Path=/; HttpOnly; SameSite=Lax; Secure`,
+  );
+  response.headers.append(
+    "Set-Cookie",
+    `refresh_token=${refreshToken}; Path=/; HttpOnly; SameSite=Lax; Secure`,
   );
 
   return response;
