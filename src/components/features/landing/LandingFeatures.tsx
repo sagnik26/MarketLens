@@ -36,7 +36,7 @@ const FEATURES: HoverEffectItem[] = [
     ),
   },
   {
-    title: "Signals & Alerts",
+    title: "Compliance and Alerts",
     description:
       "Get notified when something changes. Prioritize what matters and skip the noise.",
     badge: "Coming soon",

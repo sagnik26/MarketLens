@@ -23,19 +23,6 @@ export default function ActionsPage() {
           Actions
         </h2>
         <Link
-          href="/dashboard/actions/competitor-radar"
-          className="group flex flex-col rounded-xl border border-neutral-200 bg-white p-6 transition hover:border-violet-200 hover:shadow-[0_0_25px_-8px_rgba(139,92,246,0.25)] dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-violet-800"
-        >
-          <span className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-violet-600 dark:group-hover:text-violet-400">
-            Competitor Radar
-          </span>
-          <span className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Add competitors and run scans. Select one or multiple to run batch scans.
-          </span>
-          <span className="mt-4 text-sm font-medium text-violet-600 dark:text-violet-400">Open →</span>
-        </Link>
-
-        <Link
           href="/dashboard/actions/product-matchups"
           className="group flex flex-col rounded-xl border border-neutral-200 bg-white p-6 transition hover:border-violet-200 hover:shadow-[0_0_25px_-8px_rgba(139,92,246,0.25)] dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-violet-800"
         >
@@ -44,6 +31,19 @@ export default function ActionsPage() {
           </span>
           <span className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
             Define one of your products, pick a competitor, and set a goal for the matchup.
+          </span>
+          <span className="mt-4 text-sm font-medium text-violet-600 dark:text-violet-400">Open →</span>
+        </Link>
+
+        <Link
+          href="/dashboard/actions/competitor-radar"
+          className="group flex flex-col rounded-xl border border-neutral-200 bg-white p-6 transition hover:border-violet-200 hover:shadow-[0_0_25px_-8px_rgba(139,92,246,0.25)] dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-violet-800"
+        >
+          <span className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-violet-600 dark:group-hover:text-violet-400">
+            Competitor Radar
+          </span>
+          <span className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            Add competitors and run scans. Select one or multiple to run batch scans.
           </span>
           <span className="mt-4 text-sm font-medium text-violet-600 dark:text-violet-400">Open →</span>
         </Link>

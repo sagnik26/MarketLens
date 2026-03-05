@@ -257,15 +257,14 @@ export default function ProductMatchupsPage() {
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Start from your product, pick a competitor, and define a goal. Each scan will be stored with a
-          <span className="mx-1 font-medium text-zinc-800 dark:text-zinc-200">matchupId</span> so it can be
-          filtered in Information and Insights.
+          Start from your product, pick a competitor, and define a goal.
         </p>
         <button
           type="button"
           onClick={() => setShowEditor(true)}
-          className="inline-flex items-center rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-500"
+          className="ml-auto inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-500"
         >
+          <span aria-hidden>+</span>
           Add product matchup
         </button>
       </div>

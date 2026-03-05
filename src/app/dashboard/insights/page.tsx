@@ -584,10 +584,8 @@ export default function InsightsPage({
   searchParams?: Promise<{ tab?: string; competitorId?: string }>;
 }) {
   const tabs: { id: InsightsTab; label: string }[] = [
-    { id: "highlights", label: "Highlights" },
-    { id: "battlecards", label: "Battlecards" },
-    { id: "timeline", label: "Competitor timeline" },
-    { id: "matchups", label: "Product matchups" },
+    { id: "highlights", label: "Competitor Highlights" },
+    { id: "matchups", label: "Product Matchups" },
   ];
 
   return (

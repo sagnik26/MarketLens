@@ -20,13 +20,13 @@ const ACTIONS_GROUP = {
   icon: IconActions,
   children: [
     {
-      href: "/dashboard/actions/competitor-radar",
-      label: "Competitor Radar",
+      href: "/dashboard/actions/product-matchups",
+      label: "Product Matchups",
       icon: IconRadar,
     },
     {
-      href: "/dashboard/actions/product-matchups",
-      label: "Product Matchups",
+      href: "/dashboard/actions/competitor-radar",
+      label: "Competitor Radar",
       icon: IconRadar,
     },
     {
