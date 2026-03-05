@@ -189,7 +189,12 @@ export const scanService = {
         const body: TinyFishRequest = {
           url: page.url,
           goal: resolveGoalForPage(page),
-          browser_profile: page.channel === SourceChannel.PRICING || page.channel === SourceChannel.JOBS ? "stealth" : "lite",
+          browser_profile:
+            page.channel === SourceChannel.PRICING ||
+            page.channel === SourceChannel.JOBS ||
+            page.channel === SourceChannel.PRODUCT
+              ? "stealth"
+              : "lite",
           proxy_config: { enabled: false },
         };
 
@@ -695,7 +700,12 @@ export const scanService = {
         const body: TinyFishRequest = {
           url: page.url,
           goal: resolveGoalForPage(page),
-          browser_profile: page.channel === SourceChannel.PRICING || page.channel === SourceChannel.JOBS ? "stealth" : "lite",
+          browser_profile:
+            page.channel === SourceChannel.PRICING ||
+            page.channel === SourceChannel.JOBS ||
+            page.channel === SourceChannel.PRODUCT
+              ? "stealth"
+              : "lite",
           proxy_config: { enabled: false },
         };
 
