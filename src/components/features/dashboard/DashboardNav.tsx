@@ -29,6 +29,11 @@ const ACTIONS_GROUP = {
       label: "Product Matchups",
       icon: IconRadar,
     },
+    {
+      href: "/dashboard/actions/compliance",
+      label: "Compliance and alerts",
+      icon: IconCompliance,
+    },
   ],
 } as const;
 
