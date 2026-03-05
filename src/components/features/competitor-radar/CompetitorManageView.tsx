@@ -49,26 +49,43 @@ export function CompetitorManageView() {
   );
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<Error | null>(null);
 
   const loadCompetitors = useCallback(async () => {
     setLoading(true);
     setError(null);
     setDeleteError(null);
-    const [competitorsResult, summaryResult] = await Promise.all([
-      getCompetitorsAction(),
-      getCompetitorChannelSummaryAction(),
-    ]);
-    setLoading(false);
+    setAuthError(null);
+    try {
+      const [competitorsResult, summaryResult] = await Promise.all([
+        getCompetitorsAction(),
+        getCompetitorChannelSummaryAction(),
+      ]);
+      setLoading(false);
 
-    if (competitorsResult.success && competitorsResult.data) {
-      const loaded = competitorsResult.data as Competitor[];
-      setCompetitors(loaded);
-    } else {
-      setError(competitorsResult.error ?? "Failed to load competitors");
-    }
+      if (competitorsResult.success && competitorsResult.data) {
+        const loaded = competitorsResult.data as Competitor[];
+        setCompetitors(loaded);
+      } else {
+        const errMsg = competitorsResult.error ?? "Failed to load competitors";
+        if (/unauthorized|access token|session|expired/i.test(errMsg)) {
+          setAuthError(new Error("Unauthorized"));
+          return;
+        }
+        setError(errMsg);
+      }
 
-    if (summaryResult.success && summaryResult.data) {
-      setChannelSummaries(summaryResult.data);
+      if (summaryResult.success && summaryResult.data) {
+        setChannelSummaries(summaryResult.data);
+      }
+    } catch (err) {
+      setLoading(false);
+      const message = err instanceof Error ? err.message : String(err);
+      if (/unauthorized|access token|session|expired/i.test(message)) {
+        setAuthError(err instanceof Error ? err : new Error(message));
+        return;
+      }
+      setError(message);
     }
   }, [setCompetitors, setLoading, setError, setDeleteError]);
 
@@ -201,6 +218,7 @@ export function CompetitorManageView() {
       })
         .then((res) => {
           if (!res.ok) {
+            if (res.status === 401) setAuthError(new Error("Unauthorized"));
             return res.json().then((data: { error?: { message?: string } }) => {
               if (getScan(scanId)) {
                 updateScanEvents(scanId, [
@@ -350,6 +368,8 @@ export function CompetitorManageView() {
     });
   }, [activeChannel, competitors]);
 
+  if (authError) throw authError;
+
   if (loading && competitors.length === 0) {
     return (
       <div className="min-h-[60vh]">
@@ -458,6 +478,7 @@ export function CompetitorManageView() {
                 })
                   .then((res) => {
                     if (!res.ok) {
+                      if (res.status === 401) setAuthError(new Error("Unauthorized"));
                       return res.json().then((data: { error?: { message?: string } }) => {
                         const errMsg = data?.error?.message ?? `HTTP ${res.status}`;
                         Object.values(competitorIdToScanId).forEach((scanId) => {

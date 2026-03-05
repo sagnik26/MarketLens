@@ -7,6 +7,7 @@ export interface IChange extends Document {
   _id: mongoose.Types.ObjectId;
   companyId: mongoose.Types.ObjectId;
   scanRunId?: mongoose.Types.ObjectId;
+  matchupId?: mongoose.Types.ObjectId;
   competitorId: string;
   competitorName: string;
   changeType: string;
@@ -14,6 +15,7 @@ export interface IChange extends Document {
   priority: string;
   title: string;
   summary: string | null;
+  rawExtracted?: unknown;
   detectedAt: Date;
   pageType?: SourceChannel;
   url?: string;
@@ -33,6 +35,12 @@ const changeSchema = new Schema<IChange>(
       type: Schema.Types.ObjectId,
       ref: "ScanRun",
       index: true,
+    },
+    matchupId: {
+      type: Schema.Types.ObjectId,
+      ref: "ProductMatchup",
+      index: true,
+      default: null,
     },
     competitorId: {
       type: String,
@@ -68,6 +76,10 @@ const changeSchema = new Schema<IChange>(
       type: String,
       default: null,
     },
+    rawExtracted: {
+      type: Schema.Types.Mixed,
+      default: null,
+    },
     detectedAt: {
       type: Date,
       required: true,
@@ -89,6 +101,7 @@ const changeSchema = new Schema<IChange>(
 );
 
 changeSchema.index({ companyId: 1, detectedAt: -1 });
+changeSchema.index({ companyId: 1, matchupId: 1, detectedAt: -1 });
 
 export const ChangeModel: Model<IChange> =
   mongoose.models.Change ?? mongoose.model<IChange>("Change", changeSchema);

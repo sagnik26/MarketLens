@@ -9,6 +9,7 @@ import type { SourceChannel } from "@/constants";
 interface CreateManyArgs {
   companyId: string;
   scanRunId: string;
+  matchupId?: string;
   changes: BackendChange[];
 }
 
@@ -16,6 +17,7 @@ interface FindRecentArgs {
   companyId: string;
   limit?: number;
   pageType?: SourceChannel;
+  matchupId?: string;
 }
 
 interface FindByCompetitorArgs {
@@ -23,6 +25,7 @@ interface FindByCompetitorArgs {
   competitorId: string;
   limit?: number;
   pageType?: SourceChannel;
+  matchupId?: string;
 }
 
 function toBackendChange(doc: IChange): BackendChange {
@@ -30,11 +33,13 @@ function toBackendChange(doc: IChange): BackendChange {
     id: doc._id.toString(),
     competitorId: doc.competitorId,
     competitorName: doc.competitorName,
+    matchupId: doc.matchupId ? doc.matchupId.toString() : undefined,
     changeType: doc.changeType,
     signalType: doc.signalType,
     priority: doc.priority,
     title: doc.title,
     summary: doc.summary ?? null,
+    rawExtracted: doc.rawExtracted ?? undefined,
     isRead: false,
     isDismissed: false,
     detectedAt: doc.detectedAt.toISOString(),
@@ -44,12 +49,15 @@ function toBackendChange(doc: IChange): BackendChange {
 }
 
 export const changeRepository = {
-  async createMany({ companyId, scanRunId, changes }: CreateManyArgs): Promise<void> {
+  async createMany({ companyId, scanRunId, matchupId, changes }: CreateManyArgs): Promise<void> {
     if (!changes.length) return;
     await dbConnect();
     const docs = changes.map((chg) => ({
       companyId: new mongoose.Types.ObjectId(companyId),
       scanRunId: new mongoose.Types.ObjectId(scanRunId),
+      ...(matchupId && mongoose.Types.ObjectId.isValid(matchupId)
+        ? { matchupId: new mongoose.Types.ObjectId(matchupId) }
+        : {}),
       competitorId: chg.competitorId,
       competitorName: chg.competitorName,
       changeType: chg.changeType,
@@ -57,6 +65,7 @@ export const changeRepository = {
       priority: chg.priority,
       title: chg.title,
       summary: chg.summary ?? null,
+      rawExtracted: chg.rawExtracted ?? null,
       detectedAt: new Date(chg.detectedAt),
       pageType: chg.pageType ?? null,
       url: chg.url ?? null,
@@ -64,7 +73,7 @@ export const changeRepository = {
     await ChangeModel.insertMany(docs);
   },
 
-  async findRecentByCompany({ companyId, limit = 200, pageType }: FindRecentArgs): Promise<BackendChange[]> {
+  async findRecentByCompany({ companyId, limit = 200, pageType, matchupId }: FindRecentArgs): Promise<BackendChange[]> {
     await dbConnect();
     const safeLimit = Math.min(limit, 500);
     const filter: Record<string, unknown> = {
@@ -72,6 +81,9 @@ export const changeRepository = {
     };
     if (pageType) {
       filter.pageType = pageType;
+    }
+    if (matchupId && mongoose.Types.ObjectId.isValid(matchupId)) {
+      filter.matchupId = new mongoose.Types.ObjectId(matchupId);
     }
 
     const rows = await ChangeModel.find(filter)
@@ -87,6 +99,7 @@ export const changeRepository = {
     competitorId,
     limit = 200,
     pageType,
+    matchupId,
   }: FindByCompetitorArgs): Promise<BackendChange[]> {
     await dbConnect();
     const safeLimit = Math.min(limit, 500);
@@ -96,6 +109,9 @@ export const changeRepository = {
     };
     if (pageType) {
       filter.pageType = pageType;
+    }
+    if (matchupId && mongoose.Types.ObjectId.isValid(matchupId)) {
+      filter.matchupId = new mongoose.Types.ObjectId(matchupId);
     }
 
     const rows = await ChangeModel.find(filter)
