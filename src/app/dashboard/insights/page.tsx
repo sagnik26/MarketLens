@@ -6,15 +6,23 @@ import { EmptyState, DashboardShimmer } from "@/components/common";
 import { getInsightsSummaryAction } from "@/actions/insights.actions";
 import { SOURCE_CHANNEL_LABELS, SourceChannel, type SourceChannel as SourceChannelType } from "@/constants";
 import { InsightsTrendChart } from "@/components/features/insights/InsightsTrendChart";
+import { MatchupSignalsChart } from "@/components/features/insights/MatchupSignalsChart";
 import { competitorRepository } from "@/server/repositories/competitor.repository";
 import { battlecardService } from "@/server/services/battlecard.service";
 import { timelineService } from "@/server/services/timeline.service";
 import { getServerAuthContext } from "@/server/lib/auth/server-context";
+import { productMatchupService } from "@/server/services/product-matchup.service";
+import { changeRepository } from "@/server/repositories/change.repository";
 
-type InsightsTab = "highlights" | "battlecards" | "timeline";
+type InsightsTab = "highlights" | "battlecards" | "timeline" | "matchups";
 
 function isInsightsTab(value: string | undefined): value is InsightsTab {
-  return value === "highlights" || value === "battlecards" || value === "timeline";
+  return (
+    value === "highlights" ||
+    value === "battlecards" ||
+    value === "timeline" ||
+    value === "matchups"
+  );
 }
 
 function TabLink({
@@ -457,6 +465,106 @@ async function TimelineTab({ competitorId }: { competitorId?: string }) {
   );
 }
 
+async function MatchupsTab() {
+  const { companyId } = await getServerAuthContext();
+  const matchups = await productMatchupService.list(companyId);
+
+  const cards = await Promise.all(
+    matchups.map(async (m) => {
+      const recent = await changeRepository.findRecentByCompany({
+        companyId,
+        matchupId: m.id,
+        limit: 200,
+      });
+      return {
+        matchup: m,
+        totalSignals: recent.length,
+        lastSignalAt: recent[0]?.detectedAt ?? null,
+      };
+    }),
+  );
+
+  return (
+    <section className="rounded-2xl border border-neutral-200 bg-white p-6 text-sm text-zinc-700 dark:border-neutral-800 dark:bg-neutral-900/50 dark:text-zinc-200">
+      <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+        Product matchups
+      </h2>
+      <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+        Visualize how many matchup-tagged signals each product comparison has generated. Each scan triggered from Product Matchups is stored with a dedicated
+        <code className="mx-1">matchupId</code> so this chart can stay scoped to product vs competitor views.
+      </p>
+
+      {cards.length === 0 ? (
+        <div className="mt-6">
+          <EmptyState
+            title="No matchups yet"
+            description="Create a product matchup and run a scan to populate matchup-specific signals."
+            actionHref="/dashboard/actions/product-matchups"
+            actionLabel="Create product matchup"
+          />
+        </div>
+      ) : (
+        <div className="mt-6 grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)]">
+          <div className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-950/30">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              Signals per matchup
+            </p>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              Bar chart of total matchup-tagged signals per product vs competitor pair.
+            </p>
+            <div className="mt-4">
+              <MatchupSignalsChart
+                labels={cards.map((card) => `${card.matchup.productName} vs ${card.matchup.competitorName}`)}
+                totals={cards.map((card) => card.totalSignals)}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 text-xs text-zinc-600 dark:border-neutral-800 dark:bg-neutral-950/30 dark:text-zinc-300">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              Matchup summary
+            </p>
+            <ul className="space-y-2">
+              {cards.map((card) => (
+                <li key={card.matchup.id} className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium text-zinc-900 dark:text-zinc-100">
+                      {card.matchup.productName} vs {card.matchup.competitorName}
+                    </p>
+                    <p className="mt-0.5 line-clamp-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      Goal: {card.matchup.goal}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-[11px] font-semibold text-violet-600 dark:text-violet-300">
+                      {card.totalSignals} signal{card.totalSignals === 1 ? "" : "s"}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-zinc-500 dark:text-zinc-400">
+                      {card.lastSignalAt ? new Date(card.lastSignalAt).toLocaleDateString() : "No signals yet"}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            <p className="pt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+              For deeper qualitative details (summary, pricing, messaging, feature signals, risks, and opportunities),
+              open{" "}
+              <Link
+                href="/dashboard/information?tab=matchups"
+                className="font-medium text-violet-600 underline-offset-2 hover:underline dark:text-violet-300"
+              >
+                Information → Product matchups
+              </Link>
+              .
+            </p>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 async function InsightsContent({
   tab,
   competitorId,
@@ -466,6 +574,7 @@ async function InsightsContent({
 }) {
   if (tab === "battlecards") return <BattlecardsTab competitorId={competitorId} />;
   if (tab === "timeline") return <TimelineTab competitorId={competitorId} />;
+  if (tab === "matchups") return <MatchupsTab />;
   return <HighlightsTab />;
 }
 
@@ -475,9 +584,8 @@ export default function InsightsPage({
   searchParams?: Promise<{ tab?: string; competitorId?: string }>;
 }) {
   const tabs: { id: InsightsTab; label: string }[] = [
-    { id: "highlights", label: "Highlights" },
-    { id: "battlecards", label: "Battlecards" },
-    { id: "timeline", label: "Competitor timeline" },
+    { id: "highlights", label: "Competitor Highlights" },
+    { id: "matchups", label: "Product Matchups" },
   ];
 
   return (

@@ -6,3 +6,4 @@ export { buildReviewsGoal } from "./reviews.goal";
 export { buildChangelogGoal } from "./changelog.goal";
 export { buildFeaturesGoal } from "./features.goal";
 export { buildComplianceGoal } from "./compliance.goal";
+export { buildMatchupGoal, type BuildMatchupGoalInput } from "./matchup.goal";

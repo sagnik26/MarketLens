@@ -1,9 +1,9 @@
 #!/bin/bash
 
-echo "Checking build for NODE_ENV: $NODE_ENV on branch: $VERCEL_GIT_COMMIT_REF"
+echo "Checking build for NODE_ENV: $PROJECT_ENV on branch: $VERCEL_GIT_COMMIT_REF"
 
 # main
-if [[ "$NODE_ENV" == "production" ]]; then
+if [[ "$PROJECT_ENV" == "production" ]]; then
   if [[ "$VERCEL_GIT_COMMIT_REF" == "main" ]]; then
     echo "✅ Production project matches main branch. Building..."
     exit 1
@@ -13,7 +13,7 @@ if [[ "$NODE_ENV" == "production" ]]; then
   fi
 
 # dev
-elif [[ "$NODE_ENV" == "development" ]]; then
+elif [[ "$PROJECT_ENV" == "development" ]]; then
   if [[ "$VERCEL_GIT_COMMIT_REF" == "dev" ]]; then
     echo "✅ Dev project matches dev branch. Building..."
     exit 1
@@ -23,6 +23,6 @@ elif [[ "$NODE_ENV" == "development" ]]; then
   fi
 
 else
-  echo "🛑 NODE_ENV ($NODE_ENV) not recognized. Skipping."
+  echo "🛑 PROJECT_ENV ($PROJECT_ENV) not recognized. Skipping."
   exit 0
 fi

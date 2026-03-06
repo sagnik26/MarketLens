@@ -9,6 +9,7 @@ import {
   buildChangelogGoal,
   buildFeaturesGoal,
   buildComplianceGoal,
+  buildMatchupGoal,
 } from "@/server/lib/tinyfish/goals";
 import type { BackendChange, BackendInsight, ScanRun } from "@/types";
 import { ChangeType, Priority, SignalType, SourceChannel } from "@/constants";
@@ -28,6 +29,16 @@ interface CompetitorPageTarget {
   competitorName: string;
   url: string;
   channel: CompetitorChannel;
+  matchupId?: string;
+  matchupContext?: {
+    productName: string;
+    productSegment?: string | null;
+    productPositioning?: string | null;
+    productPricingModel?: string | null;
+    productUrl?: string | null;
+    competitorUrl: string;
+    goal: string;
+  };
 }
 
 interface RunCompetitorScanResult {
@@ -130,6 +141,22 @@ function resolveGoal(channel: CompetitorChannel): string {
   }
 }
 
+function resolveGoalForPage(page: CompetitorPageTarget): string {
+  if (page.matchupContext) {
+    return buildMatchupGoal({
+      productName: page.matchupContext.productName,
+      productSegment: page.matchupContext.productSegment ?? null,
+      productPositioning: page.matchupContext.productPositioning ?? null,
+      productPricingModel: page.matchupContext.productPricingModel ?? null,
+      productUrl: page.matchupContext.productUrl ?? null,
+      competitorName: page.competitorName,
+      competitorUrl: page.matchupContext.competitorUrl,
+      goal: page.matchupContext.goal,
+    });
+  }
+  return resolveGoal(page.channel);
+}
+
 /** Event forwarded to the client during a streaming scan (includes page context). */
 export interface StreamingScanEvent {
   type: string;
@@ -161,8 +188,13 @@ export const scanService = {
       pages.map(async (page) => {
         const body: TinyFishRequest = {
           url: page.url,
-          goal: resolveGoal(page.channel),
-          browser_profile: page.channel === SourceChannel.PRICING || page.channel === SourceChannel.JOBS ? "stealth" : "lite",
+          goal: resolveGoalForPage(page),
+          browser_profile:
+            page.channel === SourceChannel.PRICING ||
+            page.channel === SourceChannel.JOBS ||
+            page.channel === SourceChannel.PRODUCT
+              ? "stealth"
+              : "lite",
           proxy_config: { enabled: false },
         };
 
@@ -203,6 +235,108 @@ export const scanService = {
 
       const raw = result.resultJson as unknown;
       if (!raw || typeof raw !== "object") continue;
+
+      if (page.matchupContext) {
+        const ctx = page.matchupContext;
+        const rawObj = raw as Record<string, unknown>;
+        const summary =
+          typeof rawObj.summary === "string"
+            ? rawObj.summary
+            : typeof rawObj.briefing === "string"
+              ? rawObj.briefing
+              : null;
+
+        const change: BackendChange = {
+          id: `matchup-${page.competitorId}-${Date.now()}`,
+          competitorId: page.competitorId,
+          competitorName: page.competitorName,
+          matchupId: page.matchupId,
+          changeType: ChangeType.CUSTOM,
+          signalType: SignalType.INFORMATIONAL,
+          priority: Priority.MEDIUM,
+          title: `Matchup scan: ${ctx.productName} vs ${page.competitorName}`,
+          summary: summary ?? null,
+          rawExtracted: rawObj,
+          isRead: false,
+          isDismissed: false,
+          detectedAt: startedAt,
+          pageType: SourceChannel.PRODUCT,
+          url: page.url,
+        };
+        changes.push(change);
+
+        const insight: BackendInsight = {
+          id: `insight-matchup-${page.competitorId}-${Date.now()}`,
+          competitorId: page.competitorId,
+          competitorName: page.competitorName,
+          matchupId: page.matchupId,
+          title: `Matchup insight: ${ctx.productName} vs ${page.competitorName}`,
+          briefing:
+            summary ??
+            `Matchup scan completed for ${ctx.productName} vs ${page.competitorName}.`,
+          signalType: SignalType.INFORMATIONAL,
+          priority: Priority.MEDIUM,
+          recommendedActions: [],
+          generatedAt: startedAt,
+          pageType: SourceChannel.PRODUCT,
+          score: 0.6,
+          tags: ["matchup"],
+        };
+        insights.push(insight);
+        continue;
+      }
+
+      if (page.matchupContext) {
+        const ctx = page.matchupContext as {
+          productName: string;
+        };
+        const rawObj = raw as Record<string, unknown>;
+        const summary =
+          typeof rawObj.summary === "string"
+            ? rawObj.summary
+            : typeof rawObj.briefing === "string"
+              ? rawObj.briefing
+              : null;
+
+        const change: BackendChange = {
+          id: `matchup-${page.competitorId}-${Date.now()}`,
+          competitorId: page.competitorId,
+          competitorName: page.competitorName,
+          matchupId: page.matchupId,
+          changeType: ChangeType.CUSTOM,
+          signalType: SignalType.INFORMATIONAL,
+          priority: Priority.MEDIUM,
+          title: `Matchup scan: ${ctx.productName} vs ${page.competitorName}`,
+          summary: summary ?? null,
+          rawExtracted: rawObj,
+          isRead: false,
+          isDismissed: false,
+          detectedAt: startedAt,
+          pageType: SourceChannel.PRODUCT,
+          url: page.url,
+        };
+        changes.push(change);
+
+        const insight: BackendInsight = {
+          id: `insight-matchup-${page.competitorId}-${Date.now()}`,
+          competitorId: page.competitorId,
+          competitorName: page.competitorName,
+          matchupId: page.matchupId,
+          title: `Matchup insight: ${ctx.productName} vs ${page.competitorName}`,
+          briefing:
+            summary ??
+            `Matchup scan completed for ${ctx.productName} vs ${page.competitorName}.`,
+          signalType: SignalType.INFORMATIONAL,
+          priority: Priority.MEDIUM,
+          recommendedActions: [],
+          generatedAt: startedAt,
+          pageType: SourceChannel.PRODUCT,
+          score: 0.6,
+          tags: ["matchup"],
+        };
+        insights.push(insight);
+        continue;
+      }
 
       if (page.channel === SourceChannel.JOBS) {
         const jobsJson = raw as JobsResultJson;
@@ -526,7 +660,7 @@ export const scanService = {
 
     const scanRun = await scanRepository.create({
       companyId,
-      goalName: "competitor_radar_scan",
+      goalName: pages[0]?.matchupId ? "product_matchup_scan" : "competitor_radar_scan",
       status,
       startedAt,
       completedAt: nowIso,
@@ -536,10 +670,13 @@ export const scanService = {
       errorMessage: firstError,
     });
 
+    const matchupId = pages[0]?.matchupId;
+
     if (changes.length) {
       await changeRepository.createMany({
         companyId,
         scanRunId: scanRun.id,
+        matchupId,
         changes,
       });
     }
@@ -562,8 +699,13 @@ export const scanService = {
       pages.map(async (page, pageIndex) => {
         const body: TinyFishRequest = {
           url: page.url,
-          goal: resolveGoal(page.channel),
-          browser_profile: page.channel === SourceChannel.PRICING || page.channel === SourceChannel.JOBS ? "stealth" : "lite",
+          goal: resolveGoalForPage(page),
+          browser_profile:
+            page.channel === SourceChannel.PRICING ||
+            page.channel === SourceChannel.JOBS ||
+            page.channel === SourceChannel.PRODUCT
+              ? "stealth"
+              : "lite",
           proxy_config: { enabled: false },
         };
 
@@ -617,6 +759,55 @@ export const scanService = {
       const raw = result.resultJson as unknown;
       if (!raw || typeof raw !== "object") continue;
 
+      if (page.matchupContext) {
+        const rawObj = raw as Record<string, unknown>;
+        const summary =
+          typeof rawObj.summary === "string"
+            ? rawObj.summary
+            : typeof rawObj.briefing === "string"
+              ? rawObj.briefing
+              : null;
+
+        const change: BackendChange = {
+          id: `matchup-${page.competitorId}-${Date.now()}`,
+          competitorId: page.competitorId,
+          competitorName: page.competitorName,
+          matchupId: page.matchupId,
+          changeType: ChangeType.CUSTOM,
+          signalType: SignalType.INFORMATIONAL,
+          priority: Priority.MEDIUM,
+          title: `Matchup scan: ${page.matchupContext.productName} vs ${page.competitorName}`,
+          summary: summary ?? null,
+          rawExtracted: rawObj,
+          isRead: false,
+          isDismissed: false,
+          detectedAt: startedAt,
+          pageType: SourceChannel.PRODUCT,
+          url: page.url,
+        };
+        changes.push(change);
+
+        const insight: BackendInsight = {
+          id: `insight-matchup-${page.competitorId}-${Date.now()}`,
+          competitorId: page.competitorId,
+          competitorName: page.competitorName,
+          matchupId: page.matchupId,
+          title: `Matchup insight: ${page.matchupContext.productName} vs ${page.competitorName}`,
+          briefing:
+            summary ??
+            `Matchup scan completed for ${page.matchupContext.productName} vs ${page.competitorName}.`,
+          signalType: SignalType.INFORMATIONAL,
+          priority: Priority.MEDIUM,
+          recommendedActions: [],
+          generatedAt: startedAt,
+          pageType: SourceChannel.PRODUCT,
+          score: 0.6,
+          tags: ["matchup"],
+        };
+        insights.push(insight);
+        continue;
+      }
+
       if (page.channel === SourceChannel.JOBS) {
         const jobsJson = raw as JobsResultJson;
         if (!Array.isArray(jobsJson.jobs)) continue;
@@ -939,7 +1130,7 @@ export const scanService = {
 
     const scanRun = await scanRepository.create({
       companyId,
-      goalName: "competitor_radar_scan",
+      goalName: pages[0]?.matchupId ? "product_matchup_scan" : "competitor_radar_scan",
       status,
       startedAt,
       completedAt: nowIso,
@@ -949,10 +1140,13 @@ export const scanService = {
       errorMessage: firstError,
     });
 
+    const matchupId = pages[0]?.matchupId;
+
     if (changes.length) {
       await changeRepository.createMany({
         companyId,
         scanRunId: scanRun.id,
+        matchupId,
         changes,
       });
     }

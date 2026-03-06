@@ -18,7 +18,23 @@ const OVERVIEW_ITEM = {
 const ACTIONS_GROUP = {
   label: "Actions",
   icon: IconActions,
-  children: [{ href: "/dashboard/actions/competitor-radar", label: "Competitor Radar", icon: IconRadar }],
+  children: [
+    {
+      href: "/dashboard/actions/product-matchups",
+      label: "Product Matchups",
+      icon: IconRadar,
+    },
+    {
+      href: "/dashboard/actions/competitor-radar",
+      label: "Competitor Radar",
+      icon: IconRadar,
+    },
+    {
+      href: "/dashboard/actions/compliance",
+      label: "Compliance and alerts",
+      icon: IconCompliance,
+    },
+  ],
 } as const;
 
 const OTHER_ITEMS = [

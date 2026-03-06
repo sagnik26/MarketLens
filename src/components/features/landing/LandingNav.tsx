@@ -75,12 +75,6 @@ export function LandingNav() {
           MarketLens
         </Link>
         <div className="relative flex items-center gap-6">
-          <Link
-            href="/dashboard/actions/competitor-radar"
-            className="text-sm font-medium text-neutral-300 no-underline transition hover:text-white"
-          >
-            Competitor Radar
-          </Link>
           {!hydrated ? (
             <div
               className="h-8 w-8 shrink-0 rounded-full bg-neutral-700/80"

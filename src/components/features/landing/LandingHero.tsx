@@ -41,14 +41,6 @@ export function LandingHero() {
           >
             Go to Dashboard
           </Link>
-          <Link
-            href="/dashboard/actions/competitor-radar"
-            className={cn(
-              "rounded-lg border border-neutral-600 bg-transparent px-6 py-3 text-sm font-semibold text-white transition hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2 focus:ring-offset-neutral-950 no-underline"
-            )}
-          >
-            Competitor Radar
-          </Link>
         </div>
       </div>
     </section>

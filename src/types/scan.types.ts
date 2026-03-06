@@ -44,11 +44,13 @@ export interface BackendChange {
   id: string;
   competitorId: string;
   competitorName: string;
+  matchupId?: string;
   changeType: string;
   signalType: string;
   priority: string;
   title: string;
   summary: string | null;
+  rawExtracted?: unknown;
   isRead: boolean;
   isDismissed: boolean;
   detectedAt: string;
@@ -61,6 +63,7 @@ export interface BackendInsight {
   id: string;
   competitorId: string | null;
   competitorName: string | null;
+  matchupId?: string;
   title: string;
   briefing: string;
   signalType: string;
