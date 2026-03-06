@@ -1,6 +1,7 @@
 /** GET/PATCH/DELETE /api/v1/flows/:id — single flow operations. */
 
 import type { NextRequest } from "next/server";
+import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { withApiHandler } from "@/server/api/route-handler";
 import { apiSuccess } from "@/server/api/response";
@@ -10,6 +11,8 @@ import { flowService } from "@/server/services/flow.service";
 import { FlowTriggerEventType } from "@/server/models/Flow.model";
 
 export const runtime = "nodejs";
+
+const FLOWS_CACHE_TAG = "flows";
 
 const flowActionSchema = z.discriminatedUnion("type", [
   z.object({
@@ -35,9 +38,13 @@ const updateFlowBodySchema = z.object({
         FlowTriggerEventType.CHANGE_CREATED,
         FlowTriggerEventType.INSIGHT_CREATED,
         FlowTriggerEventType.SCAN_COMPLETED,
+        FlowTriggerEventType.COMPLIANCE_SCAN_COMPLETED,
       ]),
     })
     .optional(),
+  competitorId: z.string().nullable().optional(),
+  complianceSourceId: z.string().nullable().optional(),
+  matchupId: z.string().nullable().optional(),
   actions: z.array(flowActionSchema).min(1).optional(),
 });
 
@@ -71,6 +78,7 @@ export const PATCH = withApiHandler(
     }
 
     const updated = await flowService.update(companyId, id, parse.data);
+    revalidateTag(FLOWS_CACHE_TAG);
     return apiSuccess(updated);
   },
   { middleware: [authenticate] },
@@ -89,6 +97,7 @@ export const DELETE = withApiHandler(
     if (!companyId) throw new HttpError(401, "No company id in request", "UNAUTHORIZED");
 
     await flowService.delete(companyId, id);
+    revalidateTag(FLOWS_CACHE_TAG);
     return apiSuccess(null, 204);
   },
   { middleware: [authenticate] },

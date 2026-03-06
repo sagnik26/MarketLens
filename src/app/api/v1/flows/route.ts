@@ -1,6 +1,7 @@
 /** GET/POST /api/v1/flows — list and create automation flows. */
 
 import type { NextRequest } from "next/server";
+import { unstable_cache, revalidateTag } from "next/cache";
 import { z } from "zod";
 import { withApiHandler } from "@/server/api/route-handler";
 import { apiSuccess } from "@/server/api/response";
@@ -10,6 +11,9 @@ import { flowService } from "@/server/services/flow.service";
 import { FlowTriggerEventType } from "@/server/models/Flow.model";
 
 export const runtime = "nodejs";
+
+const FLOWS_CACHE_TAG = "flows";
+const FLOWS_CACHE_REVALIDATE_SECONDS = 2 * 60; // 2 minutes
 
 const flowActionSchema = z.discriminatedUnion("type", [
   z.object({
@@ -34,8 +38,12 @@ const createFlowBodySchema = z.object({
       FlowTriggerEventType.CHANGE_CREATED,
       FlowTriggerEventType.INSIGHT_CREATED,
       FlowTriggerEventType.SCAN_COMPLETED,
+      FlowTriggerEventType.COMPLIANCE_SCAN_COMPLETED,
     ]),
   }),
+  competitorId: z.string().nullable().optional(),
+  complianceSourceId: z.string().nullable().optional(),
+  matchupId: z.string().nullable().optional(),
   actions: z
     .array(flowActionSchema)
     .min(1, "At least one action is required"),
@@ -46,7 +54,11 @@ export const GET = withApiHandler(
     const companyId = req.headers.get("x-company-id") ?? "";
     if (!companyId) throw new HttpError(401, "No company id in request", "UNAUTHORIZED");
 
-    const flows = await flowService.list(companyId);
+    const flows = await unstable_cache(
+      () => flowService.list(companyId),
+      [FLOWS_CACHE_TAG, "list", companyId],
+      { revalidate: FLOWS_CACHE_REVALIDATE_SECONDS, tags: [FLOWS_CACHE_TAG] },
+    )();
     return apiSuccess(flows);
   },
   { middleware: [authenticate] },
@@ -69,7 +81,14 @@ export const POST = withApiHandler(
       throw new HttpError(422, String(message), "VALIDATION_ERROR");
     }
 
-    const created = await flowService.create(companyId, parse.data);
+    const { competitorId, complianceSourceId, matchupId, ...rest } = parse.data;
+    const created = await flowService.create(companyId, {
+      ...rest,
+      competitorId: competitorId ?? undefined,
+      complianceSourceId: complianceSourceId ?? undefined,
+      matchupId: matchupId ?? undefined,
+    });
+    revalidateTag(FLOWS_CACHE_TAG);
     return apiSuccess(created, 201);
   },
   { middleware: [authenticate] },

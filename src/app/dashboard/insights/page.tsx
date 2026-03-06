@@ -4,9 +4,11 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { EmptyState, DashboardShimmer } from "@/components/common";
 import { getInsightsSummaryAction } from "@/actions/insights.actions";
-import { SOURCE_CHANNEL_LABELS, SourceChannel, type SourceChannel as SourceChannelType } from "@/constants";
 import { InsightsTrendChart } from "@/components/features/insights/InsightsTrendChart";
+import { InsightsDonutChart } from "@/components/features/insights/InsightsDonutChart";
+import { TopCompetitorsBarChart } from "@/components/features/insights/TopCompetitorsBarChart";
 import { MatchupSignalsChart } from "@/components/features/insights/MatchupSignalsChart";
+import { SOURCE_CHANNEL_LABELS, SourceChannel, type SourceChannel as SourceChannelType } from "@/constants";
 import { competitorRepository } from "@/server/repositories/competitor.repository";
 import { battlecardService } from "@/server/services/battlecard.service";
 import { timelineService } from "@/server/services/timeline.service";
@@ -50,7 +52,9 @@ function TabLink({
 
 async function HighlightsTab() {
   const result = await getInsightsSummaryAction();
-
+  const summary = result.success && result.data ? result.data : null;
+  const trendSeries = summary?.trendSeries ?? [];
+  const insights = summary?.insights ?? [];
   const allChannels: (SourceChannelType | "all")[] = [
     "all",
     SourceChannel.PRICING,
@@ -60,14 +64,7 @@ async function HighlightsTab() {
     SourceChannel.CHANGELOG,
     SourceChannel.REVIEWS,
   ];
-
-  const summary = result.success && result.data ? result.data : null;
-  const trendSeries = summary?.trendSeries ?? [];
-  const insights = summary?.insights ?? [];
-
   const palette = ["#6366f1", "#22c55e", "#f97316", "#e11d48", "#0ea5e9"];
-
-  // Use the same week range as the backend (from "All channels" series) so every series aligns.
   const allSeries = trendSeries.find((s) => s.channel === "all");
   const weekLabels =
     allSeries?.points.map((pt) => pt.weekLabel) ??
@@ -75,127 +72,213 @@ async function HighlightsTab() {
       (a, b) => (a < b ? -1 : a > b ? 1 : 0),
     );
 
+  // Derive chart data for donuts and top competitors
+  const byChannelMap = new Map<string, number>();
+  const bySignalTypeMap = new Map<string, number>();
+  const byPriorityMap = new Map<string, number>();
+  const byCompetitorMap = new Map<string, number>();
+  insights.forEach((i) => {
+    const ch = i.pageType;
+    const channelLabel =
+      ch && ch in SOURCE_CHANNEL_LABELS ? SOURCE_CHANNEL_LABELS[ch as SourceChannelType] : "Other";
+    byChannelMap.set(channelLabel, (byChannelMap.get(channelLabel) ?? 0) + (i.score ?? 1));
+    const st = i.signalType ?? "informational";
+    const signalLabel = st.charAt(0).toUpperCase() + st.slice(1);
+    bySignalTypeMap.set(signalLabel, (bySignalTypeMap.get(signalLabel) ?? 0) + (i.score ?? 1));
+    const pr = i.priority ?? "MEDIUM";
+    byPriorityMap.set(pr, (byPriorityMap.get(pr) ?? 0) + (i.score ?? 1));
+    const name = i.competitorName ?? "Unknown";
+    byCompetitorMap.set(name, (byCompetitorMap.get(name) ?? 0) + (i.score ?? 1));
+  });
+  const byChannelLabels = Array.from(byChannelMap.keys()).sort(
+    (a, b) => (byChannelMap.get(b) ?? 0) - (byChannelMap.get(a) ?? 0),
+  );
+  const byChannelValues = byChannelLabels.map((l) => byChannelMap.get(l) ?? 0);
+  const bySignalTypeLabels = Array.from(bySignalTypeMap.keys()).sort(
+    (a, b) => (bySignalTypeMap.get(b) ?? 0) - (bySignalTypeMap.get(a) ?? 0),
+  );
+  const bySignalTypeValues = bySignalTypeLabels.map((l) => bySignalTypeMap.get(l) ?? 0);
+  const byPriorityOrder = ["URGENT", "HIGH", "MEDIUM", "LOW"];
+  const byPriorityLabels = byPriorityOrder.filter((p) => byPriorityMap.has(p));
+  const byPriorityValues = byPriorityLabels.map((p) => byPriorityMap.get(p) ?? 0);
+  const topCompetitors = Array.from(byCompetitorMap.entries())
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 8);
+  const topCompetitorLabels = topCompetitors.map(([n]) => n);
+  const topCompetitorValues = topCompetitors.map(([, v]) => v);
+
   return (
-    <>
-      <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
-        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Insight trend</h2>
-        <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-          Line chart showing how total signals move week over week. Real data will appear here once scans are persisted.
+    <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
+      <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Insight trend</h2>
+      <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+        Line chart showing how total signals move week over week. Real data will appear here once scans are persisted.
+      </p>
+      <div className="mt-8 rounded-xl border border-neutral-200 bg-neutral-50 px-2 py-4 sm:px-4 dark:border-neutral-700 dark:bg-neutral-900/70">
+        <div className="mb-3 flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
+          <span>Signals over time</span>
+          <span>{weekLabels.length} weeks</span>
+        </div>
+        <div className="mt-4 h-64 w-full">
+          <InsightsTrendChart weekLabels={weekLabels} trendSeries={trendSeries} />
+        </div>
+        <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+          Each point represents the total number of signals generated across all competitors in that week.
         </p>
+      </div>
 
-        <div className="mt-8 rounded-xl border border-neutral-200 bg-neutral-50 px-2 py-4 sm:px-4 dark:border-neutral-700 dark:bg-neutral-900/70">
-          <div className="mb-3 flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
-            <span>Signals over time</span>
-            <span>{weekLabels.length} weeks</span>
+      {/* Signal breakdown: donuts + top competitors */}
+      <div className="mt-10">
+        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Signal breakdown</h2>
+        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          Distribution by channel, signal type, priority, and top competitors by volume.
+        </p>
+        <div className="mt-6 grid gap-6 sm:grid-cols-2">
+          <div className="rounded-xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-700 dark:bg-neutral-900/70">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              By channel
+            </p>
+            <InsightsDonutChart
+              title="Signals by channel"
+              labels={byChannelLabels}
+              values={byChannelValues}
+              emptyMessage="No channel data yet. Run scans to see distribution."
+              className="h-[200px]"
+            />
           </div>
-          <div className="mt-4 h-64 w-full">
-            <InsightsTrendChart weekLabels={weekLabels} trendSeries={trendSeries} />
+          <div className="rounded-xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-700 dark:bg-neutral-900/70">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              By signal type
+            </p>
+            <InsightsDonutChart
+              title="Signals by type"
+              labels={bySignalTypeLabels}
+              values={bySignalTypeValues}
+              emptyMessage="No signal types yet."
+              className="h-[200px]"
+            />
           </div>
-          <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-            Each point represents the total number of signals generated across all competitors in that week.
-          </p>
+          <div className="rounded-xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-700 dark:bg-neutral-900/70">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              By priority
+            </p>
+            <InsightsDonutChart
+              title="Signals by priority"
+              labels={byPriorityLabels}
+              values={byPriorityValues}
+              emptyMessage="No priority data yet."
+              className="h-[200px]"
+            />
+          </div>
+          <div className="rounded-xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-700 dark:bg-neutral-900/70 sm:col-span-2">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              Top competitors by signal count
+            </p>
+            <TopCompetitorsBarChart
+              labels={topCompetitorLabels}
+              values={topCompetitorValues}
+              maxBars={8}
+              emptyMessage="No competitor data yet."
+              className="h-[220px]"
+            />
+          </div>
         </div>
+      </div>
 
-        <div className="mt-10 space-y-6">
-          <section>
-            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Insights by channel</h2>
-            {insights.length === 0 ? (
-              <div className="mt-4">
-                <EmptyState
-                  title="No insights yet"
-                  description="Once scans have created a few runs, this section will show prioritized insights grouped by source channel."
-                />
-              </div>
-            ) : (
-              <div className="mt-4 space-y-4">
-                {allChannels.map((channel) => {
-                  const filtered =
-                    channel === "all" ? insights : insights.filter((i) => (i.pageType as SourceChannelType | undefined) === channel);
-                  if (filtered.length === 0) return null;
-
-                  return (
-                    <section key={channel === "all" ? "all" : channel}>
-                      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                        {channel === "all" ? "All insights" : SOURCE_CHANNEL_LABELS[channel]}
-                      </h4>
-                      <ul className="space-y-2 text-sm text-zinc-700 dark:text-zinc-200">
-                        {filtered.map((insight) => (
-                          <li
-                            key={insight.id}
-                            className="rounded-lg border border-neutral-200 bg-neutral-50/70 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-900/60"
-                          >
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                                  {insight.title}
-                                </p>
-                                <p className="mt-0.5 text-[13px] text-zinc-600 dark:text-zinc-300 line-clamp-2">
-                                  {insight.briefing}
-                                </p>
-                              </div>
-                              <span className="shrink-0 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
-                                {insight.priority}
-                              </span>
+      <div className="mt-10 space-y-6">
+        <section>
+          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Insights by channel</h2>
+          {insights.length === 0 ? (
+            <div className="mt-4">
+              <EmptyState
+                title="No insights yet"
+                description="Once scans have created a few runs, this section will show prioritized insights grouped by source channel."
+              />
+            </div>
+          ) : (
+            <div className="mt-4 space-y-4">
+              {allChannels.map((channel) => {
+                const filtered =
+                  channel === "all"
+                    ? insights
+                    : insights.filter((i) => (i.pageType as SourceChannelType | undefined) === channel);
+                if (filtered.length === 0) return null;
+                return (
+                  <section key={channel === "all" ? "all" : channel}>
+                    <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                      {channel === "all" ? "All insights" : SOURCE_CHANNEL_LABELS[channel]}
+                    </h4>
+                    <ul className="space-y-2 text-sm text-zinc-700 dark:text-zinc-200">
+                      {filtered.map((insight) => (
+                        <li
+                          key={insight.id}
+                          className="rounded-lg border border-neutral-200 bg-neutral-50/70 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-900/60"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                                {insight.title}
+                              </p>
+                              <p className="mt-0.5 text-[13px] text-zinc-600 dark:text-zinc-300 line-clamp-2">
+                                {insight.briefing}
+                              </p>
                             </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </section>
-                  );
-                })}
+                            <span className="shrink-0 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+                              {insight.priority}
+                            </span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                );
+              })}
+            </div>
+          )}
+        </section>
+        <section>
+          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Summary</h2>
+          {insights.length === 0 ? (
+            <div className="mt-3">
+              <EmptyState
+                title="No insights available"
+                description="Once TinyFish-driven scans are stored, this panel will reflect real signal trends and recommended actions."
+              />
+            </div>
+          ) : (
+            <div className="mt-3 flex w-full flex-col rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-zinc-700 dark:border-neutral-700 dark:bg-neutral-900/60 dark:text-zinc-200">
+              <div>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {insights.length} insight{insights.length === 1 ? "" : "s"} derived from recent signals across{" "}
+                  {allChannels.length - 1} channels.
+                </p>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  Channels with the highest signal volume appear with stronger lines in the trend chart above and are
+                  good candidates for deeper investigation this week.
+                </p>
               </div>
-            )}
-          </section>
-
-          <section>
-            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Summary</h2>
-            {insights.length === 0 ? (
-              <div className="mt-3">
-                <EmptyState
-                  title="No insights available"
-                  description="Once TinyFish-driven scans are stored, this panel will reflect real signal trends and recommended actions."
-                />
-              </div>
-            ) : (
-              <div className="mt-3 flex w-full flex-col rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-zinc-700 dark:border-neutral-700 dark:bg-neutral-900/60 dark:text-zinc-200">
-                <div>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                    {insights.length} insight{insights.length === 1 ? "" : "s"} derived from recent signals across{" "}
-                    {allChannels.length - 1} channels.
-                  </p>
-                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                    Channels with the highest signal volume appear with stronger lines in the trend chart above and are good
-                    candidates for deeper investigation this week.
-                  </p>
-                </div>
-                <ul className="mt-3 space-y-1 text-xs text-zinc-600 dark:text-zinc-300">
-                  {trendSeries
-                    .filter((s) => s.channel !== "all")
-                    .map((series, idx) => (
-                      <li key={series.id} className="flex items-center justify-between gap-2">
-                        <span className="flex items-center gap-2">
-                          <span
-                            className="h-2 w-6 rounded-full"
-                            style={{ backgroundColor: palette[(idx + 1) % palette.length] }}
-                          />
-                          <span>{series.label}</span>
-                        </span>
-                        <span className="font-medium">
-                          {series.points.reduce(
-                            (sum, pt) => sum + pt.totalSignals,
-                            0,
-                          )}{" "}
-                          signals
-                        </span>
-                      </li>
-                    ))}
-                </ul>
-              </div>
-            )}
-          </section>
-        </div>
-      </section>
-    </>
+              <ul className="mt-3 space-y-1 text-xs text-zinc-600 dark:text-zinc-300">
+                {trendSeries
+                  .filter((s) => s.channel !== "all")
+                  .map((series, idx) => (
+                    <li key={series.id} className="flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-2">
+                        <span
+                          className="h-2 w-6 rounded-full"
+                          style={{ backgroundColor: palette[(idx + 1) % palette.length] }}
+                        />
+                        <span>{series.label}</span>
+                      </span>
+                      <span className="font-medium">
+                        {series.points.reduce((sum, pt) => sum + pt.totalSignals, 0)} signals
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      </div>
+    </section>
   );
 }
 
@@ -520,7 +603,25 @@ async function MatchupsTab() {
             </div>
           </div>
 
-          <div className="space-y-3 rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 text-xs text-zinc-600 dark:border-neutral-800 dark:bg-neutral-950/30 dark:text-zinc-300">
+          <div className="flex flex-col gap-6">
+            <div className="rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 dark:border-neutral-800 dark:bg-neutral-950/30">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                Share of signals
+              </p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                Donut: how much each matchup contributes to total signals.
+              </p>
+              <div className="mt-4">
+                <InsightsDonutChart
+                  title="Share of signals by matchup"
+                  labels={cards.map((card) => `${card.matchup.productName} vs ${card.matchup.competitorName}`)}
+                  values={cards.map((card) => card.totalSignals)}
+                  emptyMessage="No matchup signals yet."
+                  className="h-[220px]"
+                />
+              </div>
+            </div>
+            <div className="space-y-3 rounded-2xl border border-neutral-200 bg-neutral-50/70 p-4 text-xs text-zinc-600 dark:border-neutral-800 dark:bg-neutral-950/30 dark:text-zinc-300">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
               Matchup summary
             </p>
@@ -558,6 +659,7 @@ async function MatchupsTab() {
               </Link>
               .
             </p>
+            </div>
           </div>
         </div>
       )}
@@ -565,7 +667,7 @@ async function MatchupsTab() {
   );
 }
 
-async function InsightsContent({
+function InsightsContent({
   tab,
   competitorId,
 }: {
@@ -584,8 +686,8 @@ export default function InsightsPage({
   searchParams?: Promise<{ tab?: string; competitorId?: string }>;
 }) {
   const tabs: { id: InsightsTab; label: string }[] = [
-    { id: "highlights", label: "Competitor Highlights" },
     { id: "matchups", label: "Product Matchups" },
+    { id: "highlights", label: "Competitor Highlights" },
   ];
 
   return (
@@ -626,7 +728,7 @@ async function InsightsTabResolver({
 }) {
   const sp = searchParams ? await searchParams : {};
   const rawTab = sp.tab;
-  const tab: InsightsTab = isInsightsTab(rawTab) ? rawTab : "highlights";
+  const tab: InsightsTab = isInsightsTab(rawTab) ? rawTab : "matchups";
   return <InsightsContent tab={tab} competitorId={sp.competitorId} />;
 }
 
@@ -641,11 +743,11 @@ async function TabResolver({
 }) {
   const sp = searchParams ? await searchParams : {};
   const rawTab = sp.tab;
-  const activeTab: InsightsTab = isInsightsTab(rawTab) ? rawTab : "highlights";
+  const activeTab: InsightsTab = isInsightsTab(rawTab) ? rawTab : "matchups";
   const isActive = activeTab === tab;
 
   const href =
-    tab === "highlights"
+    tab === "matchups"
       ? "/dashboard/insights"
       : `/dashboard/insights?tab=${encodeURIComponent(tab)}`;
 

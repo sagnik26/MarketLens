@@ -16,3 +16,15 @@ export {
   type IFlowTrigger,
   type FlowTriggerEventType as FlowTriggerEventTypeValue,
 } from "./Flow.model";
+export {
+  ComplianceSourceModel,
+  toComplianceSourceResponse,
+  type ComplianceSourceResponse,
+  type IComplianceSource,
+} from "./ComplianceSource.model";
+export {
+  ComplianceScheduleModel,
+  toComplianceScheduleResponse,
+  type ComplianceScheduleResponse,
+  type IComplianceSchedule,
+} from "./ComplianceSchedule.model";

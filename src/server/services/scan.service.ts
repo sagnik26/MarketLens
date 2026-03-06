@@ -1,5 +1,6 @@
 /** Orchestrates TinyFish via client: creates ScanRun, runs agents (run-sse/run-async), updates status. */
 
+import { revalidateTag } from "next/cache";
 import type { TinyFishRequest } from "@/server/lib/tinyfish/tinyfish.types";
 import { runSSE, runSSEWithCallbacks } from "@/server/lib/tinyfish/client";
 import {
@@ -682,18 +683,42 @@ export const scanService = {
       });
     }
 
+    const competitorIds = [...new Set(pages.map((p) => p.competitorId).filter(Boolean))] as string[];
+    const matchupIds = [...new Set(pages.map((p) => p.matchupId).filter(Boolean))] as string[];
+    const flowPromises: Promise<void>[] = [];
     for (const c of changes) {
-      flowService.executeForEvent(companyId, "change_created", { change: c });
+      flowPromises.push(
+        flowService.executeForEvent(companyId, "change_created", {
+          change: c,
+          competitorId: c.competitorId ?? undefined,
+          matchupId: c.matchupId ?? undefined,
+        }),
+      );
     }
     for (const i of insights) {
-      flowService.executeForEvent(companyId, "insight_created", { insight: i });
+      flowPromises.push(
+        flowService.executeForEvent(companyId, "insight_created", {
+          insight: i,
+          competitorId: i.competitorId ?? undefined,
+          matchupId: i.matchupId ?? undefined,
+        }),
+      );
     }
-    flowService.executeForEvent(companyId, "scan_completed", {
-      scanRunId: scanRun.id,
-      status: scanRun.status,
-      totalSignals: scanRun.totalSignals,
-      totalInsights: scanRun.totalInsights,
-    });
+    flowPromises.push(
+      flowService.executeForEvent(companyId, "scan_completed", {
+        scanRunId: scanRun.id,
+        status: scanRun.status,
+        totalSignals: scanRun.totalSignals,
+        totalInsights: scanRun.totalInsights,
+        competitorIds,
+        matchupIds,
+      }),
+    );
+    await Promise.all(flowPromises);
+
+    revalidateTag("status");
+    revalidateTag("insights");
+    revalidateTag("information");
 
     return { scanRun, changes, insights };
   },
@@ -1165,27 +1190,55 @@ export const scanService = {
       });
     }
 
+    const competitorIds = [...new Set(pages.map((p) => p.competitorId).filter(Boolean))] as string[];
+    const matchupIds = [...new Set(pages.map((p) => p.matchupId).filter(Boolean))] as string[];
+    const flowPromises: Promise<void>[] = [];
     for (const c of changes) {
-      flowService.executeForEvent(companyId, "change_created", { change: c });
+      flowPromises.push(
+        flowService.executeForEvent(companyId, "change_created", {
+          change: c,
+          competitorId: c.competitorId ?? undefined,
+          matchupId: c.matchupId ?? undefined,
+        }),
+      );
     }
     for (const i of insights) {
-      flowService.executeForEvent(companyId, "insight_created", { insight: i });
+      flowPromises.push(
+        flowService.executeForEvent(companyId, "insight_created", {
+          insight: i,
+          competitorId: i.competitorId ?? undefined,
+          matchupId: i.matchupId ?? undefined,
+        }),
+      );
     }
-    flowService.executeForEvent(companyId, "scan_completed", {
-      scanRunId: scanRun.id,
-      status: scanRun.status,
-      totalSignals: scanRun.totalSignals,
-      totalInsights: scanRun.totalInsights,
-    });
+    flowPromises.push(
+      flowService.executeForEvent(companyId, "scan_completed", {
+        scanRunId: scanRun.id,
+        status: scanRun.status,
+        totalSignals: scanRun.totalSignals,
+        totalInsights: scanRun.totalInsights,
+        competitorIds,
+        matchupIds,
+      }),
+    );
+    await Promise.all(flowPromises);
+
+    revalidateTag("status");
+    revalidateTag("insights");
+    revalidateTag("information");
 
     return { scanRun, changes, insights };
   },
 
   /**
-   * Runs a compliance-focused TinyFish scan (BSE/NSE circulars etc.) and returns a ScanRun plus changes/insights.
-   * For now this is a thin wrapper that uses a dedicated compliance goal and marks changes as coming from compliance.
+   * Runs a compliance-focused TinyFish scan (BSE/NSE circulars etc.), persists a ScanRun, and emits scan_completed
+   * so Integration flows can send alerts. companyId is required for multi-tenancy and flow execution.
    */
-  async runComplianceScan(targetUrl: string): Promise<{
+  async runComplianceScan(
+    companyId: string,
+    targetUrl: string,
+    _triggeredBy: "user" | "automation" = "user",
+  ): Promise<{
     scanRun: ScanRun;
     changes: BackendChange[];
     insights: BackendInsight[];
@@ -1203,19 +1256,35 @@ export const scanService = {
 
     const nowIso = new Date().toISOString();
     const status: ScanRun["status"] = result.success ? "completed" : "failed";
+    const totalSignals = 0;
+    const totalInsights = 0;
+    const totalCompetitors = 0;
+    const errorMessage = result.success ? undefined : result.error ?? "Compliance scan failed";
 
-    const scanRun: ScanRun = {
-      id: `compliance-${Date.now()}`,
-      tinyfishRunId: "",
+    const scanRun = await scanRepository.create({
+      companyId,
       goalName: "compliance_radar_scan",
       status,
       startedAt,
       completedAt: nowIso,
-      totalSignals: 0,
-      totalInsights: 0,
-      totalCompetitors: 0,
-      errorMessage: result.success ? undefined : result.error ?? "Compliance scan failed",
-    };
+      totalSignals,
+      totalInsights,
+      totalCompetitors,
+      errorMessage,
+    });
+
+    if (result.success) {
+      void flowService.executeForEvent(companyId, "scan_completed", {
+        scanRunId: scanRun.id,
+        status: scanRun.status,
+        totalSignals: scanRun.totalSignals,
+        totalInsights: scanRun.totalInsights,
+      });
+    }
+
+    revalidateTag("status");
+    revalidateTag("insights");
+    revalidateTag("information");
 
     const changes: BackendChange[] = [];
     const insights: BackendInsight[] = [];

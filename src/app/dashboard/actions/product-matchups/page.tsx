@@ -4,9 +4,11 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { SourceChannel, type SourceChannel as SourceChannelType } from "@/constants";
 import { useScanProgressStore } from "@/stores/scan-progress.store";
 import { DashboardShimmer } from "@/components/common";
+import { productMatchupKeys } from "@/lib/queryKeys";
 
 interface ProductMatchup {
   id: string;
@@ -53,6 +55,7 @@ export default function ProductMatchupsPage() {
 
   const [scanMessage, setScanMessage] = useState<string | null>(null);
   const [authError, setAuthError] = useState<Error | null>(null);
+  const [runAllInProgress, setRunAllInProgress] = useState(false);
 
   const scans = useScanProgressStore((s) => s.scans);
   const addScan = useScanProgressStore((s) => s.addScan);
@@ -62,10 +65,11 @@ export default function ProductMatchupsPage() {
 
   const hasMatchups = useMemo(() => matchups.length > 0, [matchups]);
 
+  const queryClient = useQueryClient();
+
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
-
     try {
       const [matchupsRes, competitorsRes] = await Promise.all([
         fetch("/api/v1/product-matchups", { credentials: "include" }),
@@ -75,7 +79,7 @@ export default function ProductMatchupsPage() {
       if (matchupsRes.status === 401 || competitorsRes.status === 401) {
         setAuthError(new Error("Unauthorized"));
         setLoading(false);
-        return;
+        throw new Error("Unauthorized");
       }
 
       if (!matchupsRes.ok) {
@@ -90,24 +94,48 @@ export default function ProductMatchupsPage() {
       const matchupsJson = (await matchupsRes.json()) as { success: boolean; data: ProductMatchup[] };
       const competitorsJson = (await competitorsRes.json()) as { success: boolean; data: { competitors: Competitor[] } };
 
-      setMatchups(Array.isArray(matchupsJson.data) ? matchupsJson.data : []);
-      setCompetitors(Array.isArray(competitorsJson.data?.competitors) ? competitorsJson.data.competitors : []);
+      const loadedMatchups = Array.isArray(matchupsJson.data) ? matchupsJson.data : [];
+      const loadedCompetitors = Array.isArray(competitorsJson.data?.competitors) ? competitorsJson.data.competitors : [];
 
-      const firstCompetitor = competitorsJson.data?.competitors?.[0];
+      setMatchups(loadedMatchups);
+      setCompetitors(loadedCompetitors);
+      const firstCompetitor = loadedCompetitors[0];
       if (firstCompetitor && !competitorId) {
         setCompetitorId(firstCompetitor.id);
         setCompetitorUrl(firstCompetitor.website);
       }
+      return { matchups: loadedMatchups, competitors: loadedCompetitors };
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Failed to load Product Matchups.");
+      throw err;
     } finally {
       setLoading(false);
     }
   }, [competitorId]);
 
+  const matchupsQuery = useQuery({
+    queryKey: productMatchupKeys.list(),
+    queryFn: load,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 2 * 60 * 1000,
+  });
+
   useEffect(() => {
-    load();
-  }, [load]);
+    setLoading(matchupsQuery.isPending && !matchupsQuery.data);
+    if (matchupsQuery.error) {
+      setLoadError(matchupsQuery.error instanceof Error ? matchupsQuery.error.message : "Failed to load");
+      return;
+    }
+    const data = matchupsQuery.data;
+    if (!data) return;
+    setLoadError(null);
+    setMatchups(data.matchups);
+    setCompetitors(data.competitors);
+    if (data.competitors[0]) {
+      setCompetitorId((prev) => prev || data.competitors[0].id);
+      setCompetitorUrl((prev) => prev || data.competitors[0].website);
+    }
+  }, [matchupsQuery.isPending, matchupsQuery.data, matchupsQuery.error]);
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
@@ -150,6 +178,7 @@ export default function ProductMatchupsPage() {
 
       setMatchups((prev) => [json.data as ProductMatchup, ...prev]);
       setShowEditor(false);
+      queryClient.invalidateQueries({ queryKey: productMatchupKeys.all });
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Failed to create matchup.");
     } finally {
@@ -226,14 +255,26 @@ export default function ProductMatchupsPage() {
         }
       }
 
-      // refresh list so users see newest timestamps in other areas
-      await load();
+      queryClient.invalidateQueries({ queryKey: productMatchupKeys.all });
     } catch (err) {
       setScanMessage(err instanceof Error ? err.message : "Failed to run scan.");
       updateScanEvents(scanId, [
         "Error: " + (err instanceof Error ? err.message : "Failed to run scan."),
       ]);
       completeScan(scanId, "failed");
+    }
+  }
+
+  async function handleRunAllScans() {
+    if (matchups.length === 0) return;
+    const list = [...matchups];
+    setRunAllInProgress(true);
+    setScanMessage(null);
+    try {
+      await Promise.allSettled(list.map((m) => handleScan(m)));
+      setScanMessage("All matchup scans completed. Check Information and Insights for signals.");
+    } finally {
+      setRunAllInProgress(false);
     }
   }
 
@@ -259,14 +300,24 @@ export default function ProductMatchupsPage() {
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
           Start from your product, pick a competitor, and define a goal.
         </p>
-        <button
-          type="button"
-          onClick={() => setShowEditor(true)}
-          className="ml-auto inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-500"
-        >
-          <span aria-hidden>+</span>
-          Add product matchup
-        </button>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={matchups.length === 0 || runAllInProgress || scans.some((s) => s.groupId?.startsWith("matchup-") && s.status === "running")}
+            onClick={() => void handleRunAllScans()}
+            className="inline-flex items-center gap-2 rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:border-violet-200 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-600 dark:text-zinc-300 dark:hover:border-violet-700"
+          >
+            Run All Scan
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowEditor(true)}
+            className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-500"
+          >
+            <span aria-hidden>+</span>
+            Add product matchup
+          </button>
+        </div>
       </div>
 
       {loadError && (
@@ -482,8 +533,9 @@ export default function ProductMatchupsPage() {
         </>
       )}
 
+      {!loading && (
       <section className="mt-6 rounded-2xl border border-neutral-200 bg-white p-6 text-sm text-zinc-700 dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-zinc-200">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Existing matchups</h2>
+        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Matchups</h2>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
           Create a matchup, then run a scan. Matchup-tagged signals will be visible under Information → Product matchups and Insights → Product matchups.
         </p>
@@ -570,6 +622,7 @@ export default function ProductMatchupsPage() {
           to run your existing scans.
         </p>
       </section>
+      )}
     </div>
   );
 }

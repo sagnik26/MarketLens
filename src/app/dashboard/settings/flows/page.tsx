@@ -29,12 +29,83 @@ import {
   type WebhookActionNodeData,
   type SlackActionNodeData,
 } from "@/components/features/flows";
+import { DashboardShimmer } from "@/components/common";
 
 const FLOW_TRIGGER_EVENT_TYPE = {
   CHANGE_CREATED: "change_created",
   INSIGHT_CREATED: "insight_created",
   SCAN_COMPLETED: "scan_completed",
+  COMPLIANCE_SCAN_COMPLETED: "compliance_scan_completed",
 } as const;
+
+/** 1st level: Actions (Competitor | Compliance | Product matchup). */
+const FLOW_ACTION = {
+  COMPETITOR: "competitor",
+  COMPLIANCE: "compliance",
+  PRODUCT_MATCHUP: "product_matchup",
+} as const;
+
+/** 2nd level: Events (Changes | Insights | Scans). */
+const FLOW_EVENT = {
+  CHANGES: "changes",
+  INSIGHTS: "insights",
+  SCANS: "scans",
+} as const;
+
+/** Map (action, event) → eventType. */
+const ACTION_EVENT_TO_EVENT_TYPE: Record<string, Record<string, string>> = {
+  [FLOW_ACTION.COMPETITOR]: {
+    [FLOW_EVENT.CHANGES]: FLOW_TRIGGER_EVENT_TYPE.CHANGE_CREATED,
+    [FLOW_EVENT.INSIGHTS]: FLOW_TRIGGER_EVENT_TYPE.INSIGHT_CREATED,
+    [FLOW_EVENT.SCANS]: FLOW_TRIGGER_EVENT_TYPE.SCAN_COMPLETED,
+  },
+  [FLOW_ACTION.COMPLIANCE]: {
+    [FLOW_EVENT.SCANS]: FLOW_TRIGGER_EVENT_TYPE.COMPLIANCE_SCAN_COMPLETED,
+  },
+  [FLOW_ACTION.PRODUCT_MATCHUP]: {
+    [FLOW_EVENT.CHANGES]: FLOW_TRIGGER_EVENT_TYPE.CHANGE_CREATED,
+    [FLOW_EVENT.INSIGHTS]: FLOW_TRIGGER_EVENT_TYPE.INSIGHT_CREATED,
+    [FLOW_EVENT.SCANS]: FLOW_TRIGGER_EVENT_TYPE.SCAN_COMPLETED,
+  },
+};
+
+/** Map eventType + optional flow (for scope) → (action, event). Use flow.matchupId / flow.complianceSourceId to infer action. */
+function eventTypeToActionEvent(
+  eventType: string,
+  flow?: { matchupId?: string | null; complianceSourceId?: string | null },
+): { action: string; event: string } {
+  if (eventType === FLOW_TRIGGER_EVENT_TYPE.COMPLIANCE_SCAN_COMPLETED) {
+    return { action: FLOW_ACTION.COMPLIANCE, event: FLOW_EVENT.SCANS };
+  }
+  if (flow?.matchupId != null && flow.matchupId !== "") {
+    if (eventType === FLOW_TRIGGER_EVENT_TYPE.CHANGE_CREATED) return { action: FLOW_ACTION.PRODUCT_MATCHUP, event: FLOW_EVENT.CHANGES };
+    if (eventType === FLOW_TRIGGER_EVENT_TYPE.INSIGHT_CREATED) return { action: FLOW_ACTION.PRODUCT_MATCHUP, event: FLOW_EVENT.INSIGHTS };
+    if (eventType === FLOW_TRIGGER_EVENT_TYPE.SCAN_COMPLETED) return { action: FLOW_ACTION.PRODUCT_MATCHUP, event: FLOW_EVENT.SCANS };
+  }
+  if (eventType === FLOW_TRIGGER_EVENT_TYPE.CHANGE_CREATED) return { action: FLOW_ACTION.COMPETITOR, event: FLOW_EVENT.CHANGES };
+  if (eventType === FLOW_TRIGGER_EVENT_TYPE.INSIGHT_CREATED) return { action: FLOW_ACTION.COMPETITOR, event: FLOW_EVENT.INSIGHTS };
+  if (eventType === FLOW_TRIGGER_EVENT_TYPE.SCAN_COMPLETED) return { action: FLOW_ACTION.COMPETITOR, event: FLOW_EVENT.SCANS };
+  return { action: FLOW_ACTION.COMPETITOR, event: FLOW_EVENT.CHANGES };
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  [FLOW_ACTION.COMPETITOR]: "Competitor",
+  [FLOW_ACTION.COMPLIANCE]: "Compliance",
+  [FLOW_ACTION.PRODUCT_MATCHUP]: "Product matchup",
+};
+
+const EVENT_LABELS: Record<string, string> = {
+  [FLOW_EVENT.CHANGES]: "Changes",
+  [FLOW_EVENT.INSIGHTS]: "Insights",
+  [FLOW_EVENT.SCANS]: "Scans",
+};
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  [FLOW_TRIGGER_EVENT_TYPE.CHANGE_CREATED]: "New change",
+  [FLOW_TRIGGER_EVENT_TYPE.INSIGHT_CREATED]: "New insight",
+  [FLOW_TRIGGER_EVENT_TYPE.SCAN_COMPLETED]: "Scan completed",
+  [FLOW_TRIGGER_EVENT_TYPE.COMPLIANCE_SCAN_COMPLETED]: "Compliance scan completed",
+};
 
 const nodeTypes: NodeTypes = {
   [TRIGGER_NODE_TYPE]: TriggerNode,
@@ -42,33 +113,56 @@ const nodeTypes: NodeTypes = {
   [SLACK_NODE_TYPE]: SlackActionNode,
 };
 
-const EVENT_LABELS: Record<string, string> = {
-  [FLOW_TRIGGER_EVENT_TYPE.CHANGE_CREATED]: "New change",
-  [FLOW_TRIGGER_EVENT_TYPE.INSIGHT_CREATED]: "New insight",
-  [FLOW_TRIGGER_EVENT_TYPE.SCAN_COMPLETED]: "Scan completed",
-};
+interface ComplianceSourceOption {
+  id: string;
+  name: string;
+  url: string;
+}
+
+interface CompetitorOption {
+  id: string;
+  name: string;
+}
+
+interface MatchupOption {
+  id: string;
+  productName: string;
+  competitorName: string;
+}
 
 interface FlowRecord {
   id: string;
   name: string;
   isEnabled: boolean;
   trigger: { eventType: string };
+  competitorId?: string | null;
+  complianceSourceId?: string | null;
+  matchupId?: string | null;
   actions: Array<{ type: string; url: string; method?: string; label?: string }>;
   createdAt: string;
   updatedAt: string;
 }
 
-function flowToNodesAndEdges(flow: FlowRecord): { nodes: Node[]; edges: Edge[] } {
+function flowToNodesAndEdges(flow: FlowRecord): {
+  nodes: Node[];
+  edges: Edge[];
+  competitorId: string | null;
+  complianceSourceId: string | null;
+  matchupId: string | null;
+} {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
   const triggerId = "trigger-1";
   const eventType = flow.trigger.eventType as TriggerNodeData["eventType"];
+  const competitorId = flow.competitorId ?? null;
+  const complianceSourceId = flow.complianceSourceId ?? null;
+  const matchupId = flow.matchupId ?? null;
   nodes.push({
     id: triggerId,
     type: TRIGGER_NODE_TYPE,
     position: { x: 80, y: 120 },
     data: {
-      label: EVENT_LABELS[eventType] ?? eventType,
+      label: EVENT_TYPE_LABELS[eventType] ?? eventType,
       eventType,
     } as TriggerNodeData,
     deletable: false,
@@ -104,7 +198,7 @@ function flowToNodesAndEdges(flow: FlowRecord): { nodes: Node[]; edges: Edge[] }
       edges.push({ id: `e-${triggerId}-${id}`, source: triggerId, target: id });
     }
   });
-  return { nodes, edges };
+  return { nodes, edges, competitorId, complianceSourceId, matchupId };
 }
 
 type FlowActionPayload =
@@ -115,7 +209,18 @@ function nodesEdgesToPayload(
   nodes: Node[],
   edges: Edge[],
   name: string,
-): { name: string; trigger: { eventType: string }; actions: FlowActionPayload[] } | null {
+  flowAction: string,
+  competitorId: string | null,
+  complianceSourceId: string | null,
+  matchupId: string | null,
+): {
+  name: string;
+  trigger: { eventType: string };
+  competitorId: string | null;
+  complianceSourceId: string | null;
+  matchupId: string | null;
+  actions: FlowActionPayload[];
+} | null {
   const triggerNode = nodes.find((n) => n.type === TRIGGER_NODE_TYPE);
   if (!triggerNode || !triggerNode.data) return null;
   const eventType = (triggerNode.data as TriggerNodeData).eventType;
@@ -140,6 +245,9 @@ function nodesEdgesToPayload(
   return {
     name: name.trim() || "Untitled flow",
     trigger: { eventType },
+    competitorId: flowAction === FLOW_ACTION.COMPETITOR ? competitorId : null,
+    complianceSourceId: flowAction === FLOW_ACTION.COMPLIANCE ? complianceSourceId : null,
+    matchupId: flowAction === FLOW_ACTION.PRODUCT_MATCHUP ? matchupId : null,
     actions,
   };
 }
@@ -155,6 +263,13 @@ function FlowsPageContent() {
   const [flowName, setFlowName] = useState("");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [competitors, setCompetitors] = useState<CompetitorOption[]>([]);
+  const [complianceSources, setComplianceSources] = useState<ComplianceSourceOption[]>([]);
+  const [matchups, setMatchups] = useState<MatchupOption[]>([]);
+  const [flowAction, setFlowAction] = useState<string>(FLOW_ACTION.COMPETITOR);
+  const [flowCompetitorId, setFlowCompetitorId] = useState<string | null>(null);
+  const [flowComplianceSourceId, setFlowComplianceSourceId] = useState<string | null>(null);
+  const [flowMatchupId, setFlowMatchupId] = useState<string | null>(null);
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
@@ -184,15 +299,34 @@ function FlowsPageContent() {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch("/api/v1/flows", { credentials: "include" });
-      if (res.status === 401) {
+      const [flowsRes, compRes, compSourceRes, matchupsRes] = await Promise.all([
+        fetch("/api/v1/flows", { credentials: "include" }),
+        fetch("/api/v1/competitors?limit=100", { credentials: "include" }),
+        fetch("/api/v1/compliance/sources", { credentials: "include" }),
+        fetch("/api/v1/product-matchups", { credentials: "include" }),
+      ]);
+      if (flowsRes.status === 401) {
         setAuthError(new Error("Unauthorized"));
         setLoading(false);
         return;
       }
-      if (!res.ok) throw new Error(`Failed to load flows (HTTP ${res.status})`);
-      const json = (await res.json()) as { success: boolean; data: FlowRecord[] };
-      setFlows(Array.isArray(json.data) ? json.data : []);
+      if (!flowsRes.ok) throw new Error(`Failed to load flows (HTTP ${flowsRes.status})`);
+      const flowsJson = (await flowsRes.json()) as { success: boolean; data: FlowRecord[] };
+      setFlows(Array.isArray(flowsJson.data) ? flowsJson.data : []);
+      if (compRes.ok) {
+        const json = (await compRes.json()) as { success?: boolean; data?: { competitors?: CompetitorOption[] } };
+        setCompetitors(Array.isArray(json.data?.competitors) ? json.data.competitors : []);
+      }
+      if (compSourceRes.ok) {
+        const json = (await compSourceRes.json()) as { success?: boolean; data?: ComplianceSourceOption[] };
+        setComplianceSources(Array.isArray(json.data) ? json.data : []);
+      }
+      if (matchupsRes.ok) {
+        const json = (await matchupsRes.json()) as { success?: boolean; data?: MatchupOption[] };
+        setMatchups(Array.isArray(json.data) ? json.data : []);
+      } else {
+        setMatchups([]);
+      }
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Failed to load flows.");
     } finally {
@@ -204,26 +338,98 @@ function FlowsPageContent() {
     loadFlows();
   }, [loadFlows]);
 
-  const openCreate = useCallback(() => {
+  const openCreate = useCallback(async () => {
     setEditingId(null);
     setFlowName("");
     setNodes(initialNodes);
     setEdges(initialEdges);
     setSelectedNodeId(null);
     setSaveError(null);
+    setFlowAction(FLOW_ACTION.COMPETITOR);
+    setFlowCompetitorId(null);
+    setFlowComplianceSourceId(null);
+    setFlowMatchupId(null);
     setEditorOpen(true);
+    try {
+      const [compRes, compSourceRes, matchupsRes] = await Promise.all([
+        fetch("/api/v1/competitors?limit=100", { credentials: "include" }),
+        fetch("/api/v1/compliance/sources", { credentials: "include" }),
+        fetch("/api/v1/product-matchups", { credentials: "include" }),
+      ]);
+      if (compRes.ok) {
+        const json = (await compRes.json()) as { success?: boolean; data?: { competitors?: CompetitorOption[] } };
+        setCompetitors(Array.isArray(json.data?.competitors) ? json.data.competitors : []);
+      } else {
+        setCompetitors([]);
+      }
+      if (compSourceRes.ok) {
+        const json = (await compSourceRes.json()) as { success?: boolean; data?: ComplianceSourceOption[] };
+        setComplianceSources(Array.isArray(json.data) ? json.data : []);
+      } else {
+        setComplianceSources([]);
+      }
+      if (matchupsRes.ok) {
+        const json = (await matchupsRes.json()) as { success?: boolean; data?: MatchupOption[] };
+        setMatchups(Array.isArray(json.data) ? json.data : []);
+      } else {
+        setMatchups([]);
+      }
+    } catch {
+      setCompetitors([]);
+      setComplianceSources([]);
+      setMatchups([]);
+    }
   }, [setNodes, setEdges]);
 
   const openEdit = useCallback(
-    (flow: FlowRecord) => {
-      const { nodes: n, edges: e } = flowToNodesAndEdges(flow);
+    async (flow: FlowRecord) => {
+      const { nodes: n, edges: e, competitorId: cid, complianceSourceId: srcId, matchupId: mid } = flowToNodesAndEdges(flow);
+      const action =
+        flow.matchupId != null && flow.matchupId !== ""
+          ? FLOW_ACTION.PRODUCT_MATCHUP
+          : flow.trigger.eventType === FLOW_TRIGGER_EVENT_TYPE.COMPLIANCE_SCAN_COMPLETED
+            ? FLOW_ACTION.COMPLIANCE
+            : FLOW_ACTION.COMPETITOR;
       setEditingId(flow.id);
       setFlowName(flow.name);
       setNodes(n);
       setEdges(e);
       setSelectedNodeId(null);
       setSaveError(null);
+      setFlowAction(action);
+      setFlowCompetitorId(cid);
+      setFlowComplianceSourceId(srcId);
+      setFlowMatchupId(mid);
       setEditorOpen(true);
+      try {
+        const [compRes, compSourceRes, matchupsRes] = await Promise.all([
+          fetch("/api/v1/competitors?limit=100", { credentials: "include" }),
+          fetch("/api/v1/compliance/sources", { credentials: "include" }),
+          fetch("/api/v1/product-matchups", { credentials: "include" }),
+        ]);
+        if (compRes.ok) {
+          const json = (await compRes.json()) as { success?: boolean; data?: { competitors?: CompetitorOption[] } };
+          setCompetitors(Array.isArray(json.data?.competitors) ? json.data.competitors : []);
+        } else {
+          setCompetitors([]);
+        }
+        if (compSourceRes.ok) {
+          const json = (await compSourceRes.json()) as { success?: boolean; data?: ComplianceSourceOption[] };
+          setComplianceSources(Array.isArray(json.data) ? json.data : []);
+        } else {
+          setComplianceSources([]);
+        }
+        if (matchupsRes.ok) {
+          const json = (await matchupsRes.json()) as { success?: boolean; data?: MatchupOption[] };
+          setMatchups(Array.isArray(json.data) ? json.data : []);
+        } else {
+          setMatchups([]);
+        }
+      } catch {
+        setCompetitors([]);
+        setComplianceSources([]);
+        setMatchups([]);
+      }
     },
     [setNodes, setEdges],
   );
@@ -268,7 +474,15 @@ function FlowsPageContent() {
 
   const handleSave = useCallback(async () => {
     setSaveError(null);
-    const payload = nodesEdgesToPayload(nodes, edges, flowName);
+    const payload = nodesEdgesToPayload(
+      nodes,
+      edges,
+      flowName,
+      flowAction,
+      flowCompetitorId,
+      flowComplianceSourceId,
+      flowMatchupId,
+    );
     if (!payload) {
       setSaveError("Add one trigger and at least one webhook or Slack action with a URL, and connect them.");
       return;
@@ -316,7 +530,7 @@ function FlowsPageContent() {
     } finally {
       setSaving(false);
     }
-  }, [nodes, edges, flowName, editingId, closeEditor]);
+  }, [nodes, edges, flowName, flowAction, flowCompetitorId, flowComplianceSourceId, flowMatchupId, editingId, closeEditor]);
 
   const handleDelete = useCallback(async () => {
     if (!editingId) return;
@@ -391,7 +605,9 @@ function FlowsPageContent() {
       </header>
 
       {loading && (
-        <div className="text-sm text-zinc-500 dark:text-zinc-400">Loading integrations…</div>
+        <div className="mt-4">
+          <DashboardShimmer />
+        </div>
       )}
       {loadError && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">
@@ -428,35 +644,103 @@ function FlowsPageContent() {
             </div>
           )}
 
-          {flows.length > 0 && !editorOpen && (
-            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {flows.map((flow) => (
-                <li
-                  key={flow.id}
-                  className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h2 className="font-semibold text-zinc-900 dark:text-zinc-100">{flow.name}</h2>
-                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                        {EVENT_LABELS[flow.trigger.eventType] ?? flow.trigger.eventType} → {flow.actions.length} action(s)
-                      </p>
-                      <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
-                        {flow.isEnabled ? "Enabled" : "Disabled"}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => openEdit(flow)}
-                      className="rounded-lg border border-neutral-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-neutral-50 dark:border-neutral-600 dark:text-zinc-300 dark:hover:bg-neutral-800"
-                    >
-                      Edit
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+          {flows.length > 0 && !editorOpen && (() => {
+            function getFlowAction(flow: FlowRecord): string {
+              return eventTypeToActionEvent(flow.trigger.eventType, flow).action;
+            }
+            function getScopeName(
+              flow: FlowRecord,
+              competitors: CompetitorOption[],
+              sources: ComplianceSourceOption[],
+              matchupsList: MatchupOption[],
+            ): string {
+              const action = getFlowAction(flow);
+              if (action === FLOW_ACTION.PRODUCT_MATCHUP) {
+                if (flow.matchupId) {
+                  const m = matchupsList.find((x) => x.id === flow.matchupId);
+                  return m ? `${m.productName} vs ${m.competitorName}` : "";
+                }
+                return "All product matchups";
+              }
+              if (action === FLOW_ACTION.COMPETITOR) {
+                if (flow.competitorId) {
+                  return competitors.find((c) => c.id === flow.competitorId)?.name ?? "";
+                }
+                return "All competitors";
+              }
+              if (action === FLOW_ACTION.COMPLIANCE) {
+                if (flow.complianceSourceId) {
+                  return sources.find((s) => s.id === flow.complianceSourceId)?.name ?? "";
+                }
+                return "All compliance sources";
+              }
+              return "";
+            }
+            const productMatchupFlows = flows.filter((f) => getFlowAction(f) === FLOW_ACTION.PRODUCT_MATCHUP);
+            const competitorFlows = flows.filter((f) => getFlowAction(f) === FLOW_ACTION.COMPETITOR);
+            const complianceFlows = flows.filter((f) => getFlowAction(f) === FLOW_ACTION.COMPLIANCE);
+
+            const sections: { title: string; flows: FlowRecord[] }[] = [];
+            if (productMatchupFlows.length > 0) {
+              sections.push({ title: "Product Matchup Integration", flows: productMatchupFlows });
+            }
+            if (competitorFlows.length > 0) {
+              sections.push({ title: "Competitor Integration", flows: competitorFlows });
+            }
+            if (complianceFlows.length > 0) {
+              sections.push({ title: "Compliance Integration", flows: complianceFlows });
+            }
+
+            return (
+              <div className="space-y-8">
+                {sections.map(({ title, flows: sectionFlows }) => (
+                  <section key={title}>
+                    <h2 className="mb-3 text-base font-semibold text-zinc-800 dark:text-zinc-200">
+                      {title}
+                    </h2>
+                    <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {sectionFlows.map((flow) => {
+                        const scopeName = getScopeName(flow, competitors, complianceSources, matchups);
+                        const eventLabel = EVENT_TYPE_LABELS[flow.trigger.eventType] ?? flow.trigger.eventType;
+                        return (
+                          <li
+                            key={flow.id}
+                            className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-700 dark:bg-neutral-900"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">{flow.name}</h3>
+                                {scopeName ? (
+                                  <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                                    {scopeName}
+                                  </p>
+                                ) : null}
+                                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                  {eventLabel}
+                                  {" → "}
+                                  {flow.actions.length} action(s)
+                                </p>
+                                <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+                                  {flow.isEnabled ? "Enabled" : "Disabled"}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => openEdit(flow)}
+                                className="rounded-lg border border-neutral-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-neutral-50 dark:border-neutral-600 dark:text-zinc-300 dark:hover:bg-neutral-800"
+                              >
+                                Edit
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -543,25 +827,135 @@ function FlowsPageContent() {
             {selectedNode && (
               <aside className="w-80 shrink-0 border-l border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
                 <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Node settings</h3>
-                {selectedNode.type === TRIGGER_NODE_TYPE && (
-                  <div className="mt-3 space-y-2">
-                    <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400">Event</label>
-                    <select
-                      value={(selectedNode.data as TriggerNodeData).eventType}
-                      onChange={(e) =>
-                        updateNodeData(selectedNode.id, {
-                          eventType: e.target.value as TriggerNodeData["eventType"],
-                          label: EVENT_LABELS[e.target.value] ?? e.target.value,
-                        })
-                      }
-                      className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-zinc-100"
-                    >
-                      <option value={FLOW_TRIGGER_EVENT_TYPE.CHANGE_CREATED}>New change</option>
-                      <option value={FLOW_TRIGGER_EVENT_TYPE.INSIGHT_CREATED}>New insight</option>
-                      <option value={FLOW_TRIGGER_EVENT_TYPE.SCAN_COMPLETED}>Scan completed</option>
-                    </select>
-                  </div>
-                )}
+                {selectedNode.type === TRIGGER_NODE_TYPE && (() => {
+                  const eventType = (selectedNode.data as TriggerNodeData).eventType;
+                  const action = flowAction;
+                  const event =
+                    action === FLOW_ACTION.COMPLIANCE
+                      ? FLOW_EVENT.SCANS
+                      : eventTypeToActionEvent(eventType, {
+                          matchupId: flowMatchupId,
+                          complianceSourceId: flowComplianceSourceId,
+                        }).event;
+                  const competitorAndMatchupEvents = [
+                    FLOW_EVENT.CHANGES,
+                    FLOW_EVENT.INSIGHTS,
+                    FLOW_EVENT.SCANS,
+                  ];
+                  const complianceEvents = [FLOW_EVENT.SCANS];
+                  const eventsForAction =
+                    action === FLOW_ACTION.COMPLIANCE ? complianceEvents : competitorAndMatchupEvents;
+                  return (
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400">Actions</label>
+                        <select
+                          value={action}
+                          onChange={(e) => {
+                            const newAction = e.target.value as string;
+                            setFlowAction(newAction);
+                            const events =
+                              newAction === FLOW_ACTION.COMPLIANCE
+                                ? complianceEvents
+                                : competitorAndMatchupEvents;
+                            const newEvent = (events as readonly string[]).includes(event) ? event : events[0];
+                            const newEventType =
+                              ACTION_EVENT_TO_EVENT_TYPE[newAction]?.[newEvent] ??
+                              FLOW_TRIGGER_EVENT_TYPE.CHANGE_CREATED;
+                            updateNodeData(selectedNode.id, {
+                              eventType: newEventType as TriggerNodeData["eventType"],
+                              label: EVENT_TYPE_LABELS[newEventType] ?? newEventType,
+                            });
+                            if (newAction === FLOW_ACTION.COMPLIANCE) {
+                              setFlowCompetitorId(null);
+                              setFlowMatchupId(null);
+                            } else if (newAction === FLOW_ACTION.PRODUCT_MATCHUP) {
+                              setFlowCompetitorId(null);
+                              setFlowComplianceSourceId(null);
+                            } else {
+                              setFlowComplianceSourceId(null);
+                              setFlowMatchupId(null);
+                            }
+                          }}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-zinc-100"
+                        >
+                          <option value={FLOW_ACTION.COMPETITOR}>{ACTION_LABELS[FLOW_ACTION.COMPETITOR]}</option>
+                          <option value={FLOW_ACTION.COMPLIANCE}>{ACTION_LABELS[FLOW_ACTION.COMPLIANCE]}</option>
+                          <option value={FLOW_ACTION.PRODUCT_MATCHUP}>{ACTION_LABELS[FLOW_ACTION.PRODUCT_MATCHUP]}</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400">Events</label>
+                        <select
+                          value={event}
+                          onChange={(e) => {
+                            const newEvent = e.target.value as string;
+                            const newEventType =
+                              ACTION_EVENT_TO_EVENT_TYPE[action]?.[newEvent] ??
+                              FLOW_TRIGGER_EVENT_TYPE.CHANGE_CREATED;
+                            updateNodeData(selectedNode.id, {
+                              eventType: newEventType as TriggerNodeData["eventType"],
+                              label: EVENT_TYPE_LABELS[newEventType] ?? newEventType,
+                            });
+                          }}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-zinc-100"
+                        >
+                          {eventsForAction.map((ev) => (
+                            <option key={ev} value={ev}>
+                              {EVENT_LABELS[ev]}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400">Apply to</label>
+                        {action === FLOW_ACTION.COMPLIANCE ? (
+                          <select
+                            value={flowComplianceSourceId ?? ""}
+                            onChange={(e) => setFlowComplianceSourceId(e.target.value || null)}
+                            className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-zinc-100"
+                          >
+                            <option value="">All compliance sources</option>
+                            {complianceSources.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : action === FLOW_ACTION.PRODUCT_MATCHUP ? (
+                          <select
+                            value={flowMatchupId ?? ""}
+                            onChange={(e) => setFlowMatchupId(e.target.value || null)}
+                            className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-zinc-100"
+                          >
+                            <option value="">All product matchups</option>
+                            {matchups.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.productName} vs {m.competitorName}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <select
+                            value={flowCompetitorId ?? ""}
+                            onChange={(e) => setFlowCompetitorId(e.target.value || null)}
+                            className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-zinc-100"
+                          >
+                            <option value="">All competitors</option>
+                            {competitors.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                          Run for the selected scope only, or all.
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
                 {selectedNode.type === WEBHOOK_NODE_TYPE && (
                   <div className="mt-3 space-y-3">
                     <div>

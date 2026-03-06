@@ -2,6 +2,7 @@
 
 "use server";
 
+import { unstable_cache, revalidateTag } from "next/cache";
 import type { ActionResponse } from "@/types/actions.types";
 import type { Competitor } from "@/components/features/competitor-radar/competitor-radar.types";
 import { SourceChannel, type SourceChannel as SourceChannelType } from "@/constants";
@@ -9,10 +10,27 @@ import { competitorService } from "@/server/services/competitor.service";
 import { competitorRepository } from "@/server/repositories/competitor.repository";
 import { getServerAuthContext } from "@/server/lib/auth/server-context";
 
+const CACHE_REVALIDATE_SECONDS = 2 * 60; // 2 minutes
+const COMPETITORS_TAG = "competitors";
+
+async function getCompetitorsCached(companyId: string) {
+  return unstable_cache(
+    async () => {
+      const { competitors } = await competitorService.list(companyId, {
+        page: 1,
+        limit: 100,
+      });
+      return competitors;
+    },
+    [COMPETITORS_TAG, "list", companyId],
+    { revalidate: CACHE_REVALIDATE_SECONDS, tags: [COMPETITORS_TAG] }
+  )();
+}
+
 /** Returns list of competitors for the authenticated company. Backed by MongoDB. */
 export async function getCompetitorsAction(): Promise<ActionResponse<Competitor[]>> {
   const { companyId } = await getServerAuthContext();
-  const { competitors } = await competitorService.list(companyId, { page: 1, limit: 100 });
+  const competitors = await getCompetitorsCached(companyId);
   return { success: true, data: competitors as Competitor[] };
 }
 
@@ -44,7 +62,7 @@ export async function addCompetitorsAction(
     });
     created.push(competitor as Competitor);
   }
-
+  revalidateTag(COMPETITORS_TAG);
   return { success: true, data: created };
 }
 
@@ -56,6 +74,7 @@ export async function deleteCompetitorAction(id: string): Promise<ActionResponse
   try {
     const { companyId } = await getServerAuthContext();
     await competitorService.delete(companyId, id.trim());
+    revalidateTag(COMPETITORS_TAG);
     return { success: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to delete competitor.";
@@ -74,8 +93,7 @@ export interface CompetitorChannelSummary {
   channels: ChannelCounts[];
 }
 
-/** Aggregate: per-competitor per-channel signal counts used for Competitor Radar filters. Currently zero until scans are persisted. */
-export async function getCompetitorChannelSummaryAction(): Promise<ActionResponse<CompetitorChannelSummary[]>> {
+async function getChannelSummaryCached(companyId: string) {
   const channelOrder: SourceChannelType[] = [
     SourceChannel.PRICING,
     SourceChannel.JOBS,
@@ -83,27 +101,36 @@ export async function getCompetitorChannelSummaryAction(): Promise<ActionRespons
     SourceChannel.FEATURES,
     SourceChannel.REVIEWS,
   ];
+  return unstable_cache(
+    async () => {
+      const { competitors } = await competitorRepository.findMany({
+        companyId,
+        page: 1,
+        limit: 100,
+      });
+      return competitors.map((competitor: { id: string; name: string }) => {
+        const channels: ChannelCounts[] = channelOrder.map((channel) => ({
+          channel,
+          totalSignals: 0,
+        }));
+        return {
+          competitorId: competitor.id,
+          competitorName: competitor.name,
+          channels,
+        };
+      });
+    },
+    [COMPETITORS_TAG, "channel-summary", companyId],
+    { revalidate: CACHE_REVALIDATE_SECONDS, tags: [COMPETITORS_TAG] }
+  )();
+}
 
+/** Aggregate: per-competitor per-channel signal counts used for Competitor Radar filters. Currently zero until scans are persisted. */
+export async function getCompetitorChannelSummaryAction(): Promise<
+  ActionResponse<CompetitorChannelSummary[]>
+> {
   const { companyId } = await getServerAuthContext();
-  const { competitors } = await competitorRepository.findMany({
-    companyId,
-    page: 1,
-    limit: 100,
-  });
-
-  const summaries: CompetitorChannelSummary[] = competitors.map((competitor: { id: string; name: string }) => {
-    const channels: ChannelCounts[] = channelOrder.map((channel) => ({
-      channel,
-      totalSignals: 0,
-    }));
-
-    return {
-      competitorId: competitor.id,
-      competitorName: competitor.name,
-      channels,
-    };
-  });
-
-  return { success: true, data: summaries };
+  const summaries = await getChannelSummaryCached(companyId);
+  return { success: true, data: summaries as CompetitorChannelSummary[] };
 }
 

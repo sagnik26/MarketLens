@@ -8,7 +8,7 @@ export const TRIGGER_NODE_TYPE = "trigger";
 
 export type TriggerNodeData = {
   label: string;
-  eventType: "change_created" | "insight_created" | "scan_completed";
+  eventType: "change_created" | "insight_created" | "scan_completed" | "compliance_scan_completed";
 };
 
 function TriggerNodeComponent({ data, selected }: NodeProps<TriggerNodeData>) {
