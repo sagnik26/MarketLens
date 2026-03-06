@@ -1,0 +1,34 @@
+---
+description: Always keep Cursor rules/skills/agents updated when features change
+globs: **/*
+alwaysApply: true
+---
+
+# Cursor Governance — Update Rules & Skills with Feature Changes
+
+Whenever you implement a feature, fix a production bug, or introduce a new pattern, you MUST also update the relevant AI guidance files so future work stays consistent.
+
+## When to update guidance
+
+Update `.cursor/rules/`, `.cursor/skills/`, and/or `.cursor/agents/` when you:
+
+- Add a new user-facing module, page, or rename UI terminology (e.g. “Flows” → “Integration”).
+- Add/extend backend entities, trigger events, or action types.
+- Change API request/response shapes or validation rules.
+- Add new cross-cutting behaviors (auth/session timeout handling, error boundaries, runtime constraints).
+- Add non-trivial UI behaviors that should be consistent elsewhere (keyboard delete, default viewport behavior).
+
+## What “updated” means
+
+- Document the new behavior and file locations.
+- Add/adjust globs so rules apply to the right files.
+- Call out critical constraints (e.g. Slack Incoming Webhooks require `{ text }` payloads).
+- Keep changes minimal and high-signal; avoid duplicating existing rules.
+
+## Completion check
+
+Before finishing any feature PR, verify:
+
+- New or changed behavior is reflected in at least one rule/skill/agent doc.
+- Existing rules/skills/agents that mention old behavior are updated.
+

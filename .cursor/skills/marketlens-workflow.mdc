@@ -12,6 +12,7 @@ Use this skill whenever you:
 - Touch **competitor radar** (competitors, channels, scans)
 - Integrate or debug **TinyFish** calls
 - Change **scan persistence** (MongoDB models, repositories, services)
+- Add or modify **Integrations** (Flows) that fire on scan events (Slack/webhooks)
 - Update **Status**, **Insights**, or **Information** pages’ backend behavior
 
 The stack:
@@ -282,6 +283,33 @@ Key responsibilities:
   ```
 
 - The Status page shows `recentRuns` and agent cards; no in-memory buffers.
+
+---
+
+## Integrations (Flows) — scan-triggered automations
+
+### What it is
+
+- UI label: **Integration** (but route/API still use `/flows` and `/api/v1/flows`)
+- Data model: `FlowModel` (company-scoped)
+- Purpose: when scan events happen, POST to user-configured endpoints:
+  - `webhook` (generic)
+  - `slack` (Slack Incoming Webhook)
+
+### Trigger events
+
+Events are emitted from `scan.service.ts` **after** persistence:
+
+- `change_created` — emitted once per change
+- `insight_created` — emitted once per insight
+- `scan_completed` — emitted once per scan run (always)
+
+### Slack formatting rule (critical)
+
+Slack Incoming Webhooks require a payload with `text` (or `blocks`) to display a message.
+
+- `webhook` action sends raw `{ event, ...payload }`
+- `slack` action must send `{ text: string }` (formatted in `flow.service.ts`, e.g. `formatSlackPayload()`)
 
 ### Insights Page
 

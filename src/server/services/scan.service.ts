@@ -15,6 +15,7 @@ import type { BackendChange, BackendInsight, ScanRun } from "@/types";
 import { ChangeType, Priority, SignalType, SourceChannel } from "@/constants";
 import { scanRepository } from "@/server/repositories/scan.repository";
 import { changeRepository } from "@/server/repositories/change.repository";
+import { flowService } from "@/server/services/flow.service";
 
 type CompetitorChannel =
   | typeof SourceChannel.PRICING
@@ -681,6 +682,19 @@ export const scanService = {
       });
     }
 
+    for (const c of changes) {
+      flowService.executeForEvent(companyId, "change_created", { change: c });
+    }
+    for (const i of insights) {
+      flowService.executeForEvent(companyId, "insight_created", { insight: i });
+    }
+    flowService.executeForEvent(companyId, "scan_completed", {
+      scanRunId: scanRun.id,
+      status: scanRun.status,
+      totalSignals: scanRun.totalSignals,
+      totalInsights: scanRun.totalInsights,
+    });
+
     return { scanRun, changes, insights };
   },
 
@@ -1150,6 +1164,19 @@ export const scanService = {
         changes,
       });
     }
+
+    for (const c of changes) {
+      flowService.executeForEvent(companyId, "change_created", { change: c });
+    }
+    for (const i of insights) {
+      flowService.executeForEvent(companyId, "insight_created", { insight: i });
+    }
+    flowService.executeForEvent(companyId, "scan_completed", {
+      scanRunId: scanRun.id,
+      status: scanRun.status,
+      totalSignals: scanRun.totalSignals,
+      totalInsights: scanRun.totalInsights,
+    });
 
     return { scanRun, changes, insights };
   },

@@ -17,6 +17,7 @@ Your responsibilities:
    - Trigger `/api/v1/scan/run` correctly, sending the right competitor IDs and channels.
    - Use the global scan progress store so in-progress scans survive navigation and are visible across Status and other pages.
    - Ensure scan events and errors are surfaced in a user-friendly way (e.g., Calling API, Finished, Error messages).
+   - Keep scan completion hooks compatible with Integrations (Flows): scan events may trigger Slack/webhook actions after persistence.
 
 3. UX & layout
    - Maintain responsive grid layouts for competitor cards and controls.
