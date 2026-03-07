@@ -189,6 +189,17 @@ actionTool, actionProject, actionPriority, actionAssigneeId,
 notifySlackChannel, createdAt
 ```
 
+### Flow (Integration)
+
+A user-configured integration flow that triggers on scan events and executes one or more actions (webhook/Slack).
+
+```
+id, companyId, name, isEnabled,
+trigger (eventType),
+actions (type, url, label, method?, headers?),
+createdAt, updatedAt
+```
+
 ---
 
 ## DOMAIN VOCABULARY — USE THESE TERMS CONSISTENTLY

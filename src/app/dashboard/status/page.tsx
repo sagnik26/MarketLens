@@ -1,4 +1,4 @@
-/** Status page: shows in-progress scans (client store) and agents/recent runs (server). */
+/** Status page: shows in-progress scans (client store) and agents/recent runs (cached). */
 
 import { Suspense } from "react";
 import { getStatusSummaryAction } from "@/actions/status.actions";
@@ -18,7 +18,6 @@ async function StatusContent() {
           Unable to load status summary.
         </p>
       )}
-
       <StatusView agents={agents} recentRuns={recentRuns} />
     </>
   );

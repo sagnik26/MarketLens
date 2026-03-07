@@ -1,6 +1,7 @@
 /** GET/POST /api/v1/competitors — list and create competitors for Competitor Radar. */
 
 import type { NextRequest } from "next/server";
+import { unstable_cache, revalidateTag } from "next/cache";
 import { withApiHandler } from "@/server/api/route-handler";
 import { apiSuccess } from "@/server/api/response";
 import { competitorService } from "@/server/services/competitor.service";
@@ -8,6 +9,9 @@ import { authenticate } from "@/server/api/middleware/auth";
 import { HttpError } from "@/server/api/errors";
 
 export const runtime = "nodejs";
+
+const COMPETITORS_CACHE_TAG = "competitors";
+const COMPETITORS_CACHE_REVALIDATE_SECONDS = 2 * 60; // 2 minutes
 
 export const GET = withApiHandler(
   async (req: NextRequest) => {
@@ -20,7 +24,14 @@ export const GET = withApiHandler(
       throw new HttpError(401, "No company id in request", "UNAUTHORIZED");
     }
 
-    const result = await competitorService.list(companyId, { page, limit });
+    const result = await unstable_cache(
+      () => competitorService.list(companyId, { page, limit }),
+      [COMPETITORS_CACHE_TAG, "list", companyId, String(page), String(limit)],
+      {
+        revalidate: COMPETITORS_CACHE_REVALIDATE_SECONDS,
+        tags: [COMPETITORS_CACHE_TAG],
+      },
+    )();
     return apiSuccess(result);
   },
   { middleware: [authenticate] },
@@ -43,6 +54,7 @@ export const POST = withApiHandler(
       website: body.website ?? "",
       logoUrl: body.logoUrl ?? null,
     });
+    revalidateTag(COMPETITORS_CACHE_TAG);
     return apiSuccess(competitor, 201);
   },
   { middleware: [authenticate] },

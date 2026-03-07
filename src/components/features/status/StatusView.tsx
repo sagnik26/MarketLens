@@ -3,7 +3,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useScanProgressStore } from "@/stores/scan-progress.store";
 import type { AgentStatus, ScanRun } from "@/types";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,15 @@ export function StatusView({ agents, recentRuns }: StatusViewProps) {
     () => (selectedScanId ? runningScans.find((s) => s.id === selectedScanId) : null),
     [selectedScanId, runningScans],
   );
+
+  // Auto-select first run when there are live runs (for accessibility)
+  useEffect(() => {
+    if (runningScans.length === 0) return;
+    const firstId = runningScans[0].id;
+    if (!selectedScanId || !runningScans.some((s) => s.id === selectedScanId)) {
+      setSelectedScanId(firstId);
+    }
+  }, [runningScans, selectedScanId]);
 
   return (
     <div className="space-y-6">

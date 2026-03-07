@@ -21,6 +21,8 @@ interface FindManyArgs {
   companyId: string;
   page?: number;
   limit?: number;
+  /** When set, only return runs with this goalName (e.g. compliance_radar_scan). */
+  goalName?: string;
 }
 
 function toScanRun(doc: IScanRun): ScanRun {
@@ -55,12 +57,13 @@ export const scanRepository = {
     return toScanRun(doc);
   },
 
-  async findMany({ companyId, page = 1, limit = 20 }: FindManyArgs): Promise<{ scanRuns: ScanRun[]; total: number }> {
+  async findMany({ companyId, page = 1, limit = 20, goalName }: FindManyArgs): Promise<{ scanRuns: ScanRun[]; total: number }> {
     await dbConnect();
     const safeLimit = Math.min(limit, 100);
     const skip = (page - 1) * safeLimit;
 
-    const filter = { companyId: new mongoose.Types.ObjectId(companyId) };
+    const filter: Record<string, unknown> = { companyId: new mongoose.Types.ObjectId(companyId) };
+    if (goalName) filter.goalName = goalName;
 
     const [rows, total] = await Promise.all([
       ScanRunModel.find(filter)
