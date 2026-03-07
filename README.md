@@ -2,9 +2,6 @@
 
 **AI-powered product intelligence for B2B SaaS.**
 
-<!-- Badges: add build status, license, version when applicable -->
-<!-- [![Build](https://img.shields.io/...)](...) [![License](https://img.shields.io/...)](...) -->
-
 ---
 
 ## Introduction / Value Proposition
