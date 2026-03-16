@@ -59,6 +59,7 @@ Add new pages under the correct segment (e.g. new dashboard page under `app/dash
   - **`dashboard/`** — DashboardNav (sidebar with nested Actions), other dashboard widgets.
   - **`landing/`** — LandingHero, LandingFeatures, LandingNav.
   - **`integrations/`** — Jira, Linear, RuleBuilder.
+  - **`flows/`** — Integration (Flows) builder UI (React Flow) + custom nodes (Slack/webhook).
 - **`components/common/`** — Shared composite components.
 
 Prefer one primary component per file; co-locate feature types/hooks in the same feature folder.

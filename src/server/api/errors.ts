@@ -16,3 +16,9 @@ export class NotFoundError extends HttpError {
     super(404, `${resource} not found`, "NOT_FOUND");
   }
 }
+
+export class ValidationError extends HttpError {
+  constructor(message = "Validation failed") {
+    super(422, message, "VALIDATION_ERROR");
+  }
+}

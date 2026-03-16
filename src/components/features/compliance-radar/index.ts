@@ -2,3 +2,4 @@
 
 export { CircularFeed } from "./CircularFeed";
 export { CircularCard } from "./CircularCard";
+export { ComplianceManageView } from "./ComplianceManageView";

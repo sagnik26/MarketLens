@@ -1,0 +1,48 @@
+---
+description: Integration (Flows) builder + Flow triggers/actions (Slack/webhooks) conventions
+globs:
+  - "src/app/dashboard/settings/flows/**"
+  - "src/app/api/v1/flows/**"
+  - "src/server/models/Flow.model.ts"
+  - "src/server/repositories/flow.repository.ts"
+  - "src/server/services/flow.service.ts"
+  - "src/server/services/scan.service.ts"
+  - "src/components/features/flows/**"
+alwaysApply: false
+---
+
+# Integration (Flows) — Automation Conventions
+
+## Terminology
+
+- UI copy uses **Integration** (nav + page title), but the route and API remain:
+  - Page route: `/dashboard/settings/flows`
+  - API: `/api/v1/flows`
+  - Files/folders: `components/features/flows/*` and `FlowModel`
+
+## Trigger events (FlowTriggerEventType)
+
+- `change_created`: fired once **per change** after a competitor scan completes.
+- `insight_created`: fired once **per insight** after a competitor scan completes.
+- `scan_completed`: fired **once per scan run** after scan persistence.
+
+Rule: triggers are emitted only from the **competitor scan pipeline** (`scan.service.ts`), never automatically in the background unless user explicitly enabled automation.
+
+## Action types (FlowAction.type)
+
+- `webhook`: POST the raw event payload `{ event, ...payload }`.
+- `slack`: MUST send Slack Incoming Webhook payload with `{ text: string }` (or `blocks`), not raw JSON.
+  - Slack action formatting lives in `flow.service.ts` (e.g. `formatSlackPayload()`).
+
+## React Flow editor UX
+
+- Default viewport should not be overly zoomed in (`defaultViewport` and `fitViewOptions.maxZoom`).
+- Trigger node must be non-deletable (`deletable: false`).
+- Action nodes should be deletable via:
+  - node-level delete button
+  - keyboard Delete/Backspace (`deleteKeyCode`)
+
+## Auth/session timeout
+
+- For dashboard pages, prefer reusing the dashboard segment error boundary session UX.
+  - If a page detects `401`, throw an auth error to trigger `src/app/dashboard/error.tsx`.

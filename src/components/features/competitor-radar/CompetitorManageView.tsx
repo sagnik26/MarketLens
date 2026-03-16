@@ -3,6 +3,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CompetitorCard } from "./CompetitorCard";
 import { ScanProgress } from "./ScanProgress";
 import {
@@ -21,6 +22,7 @@ import {
   type SourceChannel as SourceChannelType,
 } from "@/constants";
 import { DashboardShimmer } from "@/components/common";
+import { competitorKeys } from "@/lib/queryKeys";
 
 export function CompetitorManageView() {
   const { competitors, setCompetitors, loading, setLoading, error, setError } =
@@ -51,6 +53,8 @@ export function CompetitorManageView() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<Error | null>(null);
 
+  const queryClient = useQueryClient();
+
   const loadCompetitors = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -61,16 +65,14 @@ export function CompetitorManageView() {
         getCompetitorsAction(),
         getCompetitorChannelSummaryAction(),
       ]);
-      setLoading(false);
 
       if (competitorsResult.success && competitorsResult.data) {
-        const loaded = competitorsResult.data as Competitor[];
-        setCompetitors(loaded);
+        setCompetitors(competitorsResult.data as Competitor[]);
       } else {
         const errMsg = competitorsResult.error ?? "Failed to load competitors";
         if (/unauthorized|access token|session|expired/i.test(errMsg)) {
           setAuthError(new Error("Unauthorized"));
-          return;
+          return { competitorsResult, summaryResult };
         }
         setError(errMsg);
       }
@@ -78,20 +80,66 @@ export function CompetitorManageView() {
       if (summaryResult.success && summaryResult.data) {
         setChannelSummaries(summaryResult.data);
       }
+
+      return { competitorsResult, summaryResult };
     } catch (err) {
-      setLoading(false);
       const message = err instanceof Error ? err.message : String(err);
       if (/unauthorized|access token|session|expired/i.test(message)) {
         setAuthError(err instanceof Error ? err : new Error(message));
-        return;
+      } else {
+        setError(message);
       }
-      setError(message);
+      throw err;
+    } finally {
+      setLoading(false);
     }
   }, [setCompetitors, setLoading, setError, setDeleteError]);
 
+  const competitorsQuery = useQuery({
+    queryKey: competitorKeys.listAndSummary(),
+    queryFn: loadCompetitors,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    gcTime: 2 * 60 * 1000, // 2 minutes
+  });
+
+  // Derive loading/error/data from query (covers both fresh fetch and cache restore on remount)
   useEffect(() => {
-    loadCompetitors();
-  }, [loadCompetitors]);
+    setLoading(competitorsQuery.isPending && !competitorsQuery.data);
+    if (competitorsQuery.error) {
+      setError(
+        competitorsQuery.error instanceof Error
+          ? competitorsQuery.error.message
+          : "Failed to load"
+      );
+      return;
+    }
+    const { competitorsResult, summaryResult } = competitorsQuery.data ?? {};
+    if (!competitorsQuery.data) return;
+    setError(null);
+    setDeleteError(null);
+    setAuthError(null);
+    if (competitorsResult?.success && competitorsResult.data) {
+      setCompetitors(competitorsResult.data as Competitor[]);
+    } else if (competitorsResult && !competitorsResult.success) {
+      const errMsg = competitorsResult.error ?? "Failed to load competitors";
+      if (/unauthorized|access token|session|expired/i.test(errMsg)) {
+        setAuthError(new Error("Unauthorized"));
+      } else {
+        setError(errMsg);
+      }
+    }
+    if (summaryResult?.success && summaryResult.data) {
+      setChannelSummaries(summaryResult.data);
+    }
+  }, [
+    competitorsQuery.isPending,
+    competitorsQuery.data,
+    competitorsQuery.error,
+    setCompetitors,
+    setLoading,
+    setError,
+    setDeleteError,
+  ]);
 
   const consumeScanStream = useCallback(
     (
@@ -249,9 +297,9 @@ export function CompetitorManageView() {
   const handleScanDone = useCallback(
     (scanId: string) => {
       removeScan(scanId);
-      loadCompetitors();
+      queryClient.invalidateQueries({ queryKey: competitorKeys.all });
     },
-    [removeScan, loadCompetitors],
+    [removeScan, queryClient],
   );
 
   const openAddModal = useCallback(() => {
@@ -288,11 +336,12 @@ export function CompetitorManageView() {
       setDeletingId(null);
       if (result.success) {
         setCompetitors((prev) => prev.filter((c) => c.id !== competitor.id));
+        queryClient.invalidateQueries({ queryKey: competitorKeys.all });
       } else {
         setDeleteError(result.error ?? "Failed to delete competitor.");
       }
     },
-    [setCompetitors],
+    [setCompetitors, queryClient],
   );
 
   const handleAddSubmit = useCallback(async () => {
@@ -318,10 +367,11 @@ export function CompetitorManageView() {
       const created = result.data as Competitor[];
       setCompetitors((prev) => [...prev, ...created]);
       setAddModalOpen(false);
+      queryClient.invalidateQueries({ queryKey: competitorKeys.all });
     } else {
       setFormError(result.error ?? "Failed to add competitors.");
     }
-  }, [formRows, setCompetitors]);
+  }, [formRows, setCompetitors, queryClient]);
 
   // Competitor Radar: Product kept; Features removed; Changelog/release notes added.
   const sourceChannels: SourceChannelType[] = useMemo(

@@ -11,6 +11,7 @@ alwaysApply: true
 - Common error patterns that could be prevented
 - New libraries or tools being used consistently
 - Emerging best practices in the codebase
+- New features or renamed UX concepts that should be reflected in Cursor guidance (rules/skills/agents)
 
 # Analysis Process:
 

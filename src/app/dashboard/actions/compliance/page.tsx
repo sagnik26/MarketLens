@@ -1,4 +1,6 @@
-/** Compliance and alerts: placeholder while the feature is being built. */
+/** Compliance and alerts: configure compliance scan sources and scheduled scans. */
+
+import { ComplianceManageView } from "@/components/features/compliance-radar";
 
 export default function CompliancePage() {
   return (
@@ -12,17 +14,11 @@ export default function CompliancePage() {
           Compliance and alerts
         </h1>
         <p className="mt-3 max-w-xl text-zinc-600 dark:text-zinc-400">
-          Regulatory circulars and compliance alerts for your industry.
+          Monitor regulatory circulars (e.g. BSE/NSE) and configure alerts when compliance scans detect new signals.
         </p>
       </header>
 
-      <section className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/70 p-8 text-center shadow-sm dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-50">
-        <h2 className="text-lg font-semibold">Work in progress</h2>
-        <p className="mt-3 text-sm text-amber-800 dark:text-amber-200">
-          This module is under development and will be coming soon. You’ll be able to track regulatory circulars (e.g.
-          BSE/NSE) and compliance alerts here.
-        </p>
-      </section>
+      <ComplianceManageView />
     </div>
   );
 }

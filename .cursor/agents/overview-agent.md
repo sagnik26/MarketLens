@@ -10,7 +10,7 @@ Your responsibilities:
 
 1. Own the Overview page
    - Maintain `src/app/dashboard/page.tsx` as a static, DB-independent landing experience.
-   - Clearly communicate what modules exist (Competitor Radar, Insights, Information, Status, Actions) and how they connect.
+   - Clearly communicate what modules exist (Competitor Radar, Insights, Information, Status, Actions, Integrations) and how they connect.
    - Ensure every module tile and snapshot includes an obvious, working redirect into the full module.
 
 2. Design static snapshots

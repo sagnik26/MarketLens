@@ -4,7 +4,11 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { informationService } from "@/server/services/information.service";
-import { SourceChannel, SOURCE_CHANNEL_LABELS, type SourceChannel as SourceChannelType } from "@/constants";
+import {
+  SourceChannel,
+  SOURCE_CHANNEL_LABELS,
+  type SourceChannel as SourceChannelType,
+} from "@/constants";
 import { DashboardShimmer } from "@/components/common";
 import { getServerAuthContext } from "@/server/lib/auth/server-context";
 
@@ -21,7 +25,10 @@ function isSourceChannel(value: string): value is SourceChannelType {
   return Object.values(SourceChannel).includes(value as SourceChannelType);
 }
 
-async function InformationChannelContent({ params, searchParams }: InformationChannelPageProps) {
+async function InformationChannelContent({
+  params,
+  searchParams,
+}: InformationChannelPageProps) {
   const { channel: rawChannel } = await params;
   if (!isSourceChannel(rawChannel)) {
     notFound();
@@ -31,16 +38,18 @@ async function InformationChannelContent({ params, searchParams }: InformationCh
   const sp = searchParams ? await searchParams : {};
   const competitorId = sp.competitorId;
   const pageFromQuery = sp.page ? Number(sp.page) : 1;
-  const currentPage = Number.isFinite(pageFromQuery) && pageFromQuery > 0 ? pageFromQuery : 1;
+  const currentPage =
+    Number.isFinite(pageFromQuery) && pageFromQuery > 0 ? pageFromQuery : 1;
   const { companyId } = await getServerAuthContext();
 
-  const { changes, total, page, totalPages } = await informationService.getChannelDetails({
-    companyId,
-    channel,
-    competitorId,
-    page: currentPage,
-    limit: 10,
-  });
+  const { changes, total, page, totalPages } =
+    await informationService.getChannelDetails({
+      companyId,
+      channel,
+      competitorId,
+      page: currentPage,
+      limit: 10,
+    });
 
   const titlePrefix = competitorId ? "Channel details" : "Channel overview";
 
@@ -48,16 +57,32 @@ async function InformationChannelContent({ params, searchParams }: InformationCh
     <div className="min-h-screen px-6 py-8 md:px-8 md:py-10">
       <header className="mb-8">
         <div className="mb-1 inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50/80 px-3 py-1 text-xs font-medium text-violet-700 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-300">
-          <span className="h-1.5 w-1.5 rounded-full bg-violet-500" aria-hidden />
+          <span
+            className="h-1.5 w-1.5 rounded-full bg-violet-500"
+            aria-hidden
+          />
           Information · {SOURCE_CHANNEL_LABELS[channel]}
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100 md:text-3xl">
-          {competitorId ? `${SOURCE_CHANNEL_LABELS[channel]} details` : `${SOURCE_CHANNEL_LABELS[channel]} signals`}
+        <div>
+          <Link
+            href="/dashboard/information"
+            className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+          >
+            ← Back to Information
+          </Link>
+        </div>
+
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100 md:text-3xl">
+          {competitorId
+            ? `${SOURCE_CHANNEL_LABELS[channel]} details`
+            : `${SOURCE_CHANNEL_LABELS[channel]} signals`}
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
           {titlePrefix} for{" "}
           <span className="font-medium">{SOURCE_CHANNEL_LABELS[channel]}</span>
-          {competitorId ? " for a specific competitor." : " across all competitors."}
+          {competitorId
+            ? " for a specific competitor."
+            : " across all competitors."}
           {total > 0 && (
             <>
               {" "}
@@ -69,7 +94,8 @@ async function InformationChannelContent({ params, searchParams }: InformationCh
 
       {changes.length === 0 ? (
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          No signals have been recorded yet for this channel{competitorId ? " and competitor" : ""}.
+          No signals have been recorded yet for this channel
+          {competitorId ? " and competitor" : ""}.
         </p>
       ) : (
         <section className="space-y-4">
@@ -159,7 +185,10 @@ async function InformationChannelContent({ params, searchParams }: InformationCh
                   return items.map((item, idx) => {
                     if (item === "ellipsis") {
                       return (
-                        <span key={`ellipsis-${idx}`} className="px-2 text-zinc-400">
+                        <span
+                          key={`ellipsis-${idx}`}
+                          className="px-2 text-zinc-400"
+                        >
                           …
                         </span>
                       );
@@ -212,7 +241,9 @@ async function InformationChannelContent({ params, searchParams }: InformationCh
   );
 }
 
-export default function InformationChannelPage(props: InformationChannelPageProps) {
+export default function InformationChannelPage(
+  props: InformationChannelPageProps,
+) {
   return (
     <Suspense fallback={<DashboardShimmer />}>
       <InformationChannelContent {...props} />

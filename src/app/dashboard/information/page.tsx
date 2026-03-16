@@ -1,39 +1,33 @@
-/** Information page: tenant-wide view and matchups overview (backend-powered overview, placeholder matchups). */
+/** Information page: tenant-wide view and matchups overview (cached). */
 
 import { Suspense } from "react";
 import Link from "next/link";
 import { EmptyState, DashboardShimmer } from "@/components/common";
-import { informationService } from "@/server/services/information.service";
-import { productMatchupService } from "@/server/services/product-matchup.service";
-import { changeRepository } from "@/server/repositories/change.repository";
-import { getServerAuthContext } from "@/server/lib/auth/server-context";
-
-export const dynamic = "force-dynamic";
+import {
+  getInformationOverviewAction,
+  type InformationSummary,
+  type MatchupRow,
+} from "@/actions/information.actions";
 
 type InformationTab = "overview" | "matchups";
 
 function resolveTab(value: string | undefined): InformationTab {
-  if (value === "matchups") return "matchups";
-  return "overview";
+  if (value === "overview") return "overview";
+  return "matchups";
 }
 
-async function WorkspaceOverviewSection() {
-  const { companyId } = await getServerAuthContext();
-  const summary = await informationService.getSummary(companyId);
-
+function WorkspaceOverviewSection({ summary }: { summary: InformationSummary }) {
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
       <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Competitor Radar</h2>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Consolidated profile information from pricing, jobs, Product Hunt, and features.
-            Data reflects your current competitors; refresh to see newly added ones. Scan results will appear
-            once runs are stored.
+            Consolidated profile information from pricing, jobs, Product Hunt, and features. Data reflects your
+            current competitors; refresh to see newly added ones. Scan results will appear once runs are stored.
           </p>
         </div>
       </header>
-
       <div className="mt-5">
         {summary.competitorRadar.channels.length === 0 ? (
           <EmptyState
@@ -46,16 +40,13 @@ async function WorkspaceOverviewSection() {
           <div className="space-y-4">
             {summary.competitorRadar.channels.map((group) => {
               if (group.profiles.length === 0) return null;
-
               return (
                 <article
                   key={group.channel}
                   className="rounded-xl border border-neutral-200 bg-neutral-50/80 p-4 dark:border-neutral-700 dark:bg-neutral-900/60"
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                      {group.label}
-                    </h3>
+                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{group.label}</h3>
                     <span className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-medium text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
                       {group.profiles.length} competitors
                     </span>
@@ -88,22 +79,7 @@ async function WorkspaceOverviewSection() {
   );
 }
 
-async function MatchupsOverviewSection() {
-  const { companyId } = await getServerAuthContext();
-  const matchups = await productMatchupService.list(companyId);
-
-  const rows = await Promise.all(
-    matchups.map(async (m) => {
-      const recent = await changeRepository.findRecentByCompany({
-        companyId,
-        matchupId: m.id,
-        limit: 1,
-      });
-      const last = recent[0] ?? null;
-      return { matchup: m, lastChange: last };
-    }),
-  );
-
+function MatchupsOverviewSection({ rows }: { rows: MatchupRow[] }) {
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-6 text-sm text-zinc-700 dark:border-neutral-800 dark:bg-neutral-900/50 dark:text-zinc-200">
       <header className="mb-3">
@@ -112,7 +88,6 @@ async function MatchupsOverviewSection() {
           Matchup-specific views: your product context + competitor scans tagged with a dedicated matchupId.
         </p>
       </header>
-
       {rows.length === 0 ? (
         <EmptyState
           title="No product matchups yet"
@@ -139,9 +114,7 @@ async function MatchupsOverviewSection() {
                   <td className="px-3 py-2 text-zinc-900 dark:text-zinc-100">
                     <div className="flex flex-col">
                       <span>{matchup.competitorName}</span>
-                      <span className="text-[10px] text-zinc-500 dark:text-zinc-400">
-                        {matchup.competitorUrl}
-                      </span>
+                      <span className="text-[10px] text-zinc-500 dark:text-zinc-400">{matchup.competitorUrl}</span>
                     </div>
                   </td>
                   <td className="px-3 py-2 align-top max-w-xs whitespace-normal break-words text-[11px] text-zinc-600 dark:text-zinc-300">
@@ -168,7 +141,6 @@ async function MatchupsOverviewSection() {
           </table>
         </div>
       )}
-
       <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
         Manage matchups in{" "}
         <Link
@@ -183,24 +155,38 @@ async function MatchupsOverviewSection() {
   );
 }
 
-export default function InformationPage({
+async function Content({
   searchParams,
 }: {
   searchParams?: Promise<{ tab?: string }>;
 }) {
-  const resolved = searchParams ? undefined : undefined; // placeholder to satisfy type, actual resolution in child
-
-  async function Content() {
-    const sp = searchParams ? await searchParams : {};
-    const tab = resolveTab(sp.tab);
-
+  const sp = searchParams ? await searchParams : {};
+  const tab = resolveTab(sp.tab);
+  const result = await getInformationOverviewAction();
+  if (!result.success || !result.data) {
     return (
-      <div className="space-y-8">
-        {tab === "overview" ? <WorkspaceOverviewSection /> : <MatchupsOverviewSection />}
-      </div>
+      <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+        Unable to load information overview.
+      </p>
     );
   }
+  const data = result.data;
+  return (
+    <div className="space-y-8">
+      {tab === "overview" ? (
+        <WorkspaceOverviewSection summary={data.summary} />
+      ) : (
+        <MatchupsOverviewSection rows={data.matchupsRows} />
+      )}
+    </div>
+  );
+}
 
+export default async function InformationPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ tab?: string }>;
+}) {
   return (
     <div className="min-h-screen px-6 py-8 md:px-8 md:py-10">
       <header className="mb-8">
@@ -215,14 +201,12 @@ export default function InformationPage({
           Detailed information for each radar: competitor signals by channel today, and product vs competitor
           matchups soon.
         </p>
-
         <Suspense fallback={null}>
           <Tabs searchParams={searchParams} />
         </Suspense>
       </header>
-
       <Suspense fallback={<DashboardShimmer />}>
-        <Content />
+        <Content searchParams={searchParams} />
       </Suspense>
     </div>
   );
@@ -235,12 +219,10 @@ async function Tabs({
 }) {
   const sp = searchParams ? await searchParams : {};
   const active = resolveTab(sp.tab);
-
   const tabs: { id: InformationTab; label: string; href: string }[] = [
-    { id: "overview", label: "Workspace overview", href: "/dashboard/information" },
-    { id: "matchups", label: "Product matchups", href: "/dashboard/information?tab=matchups" },
+    { id: "matchups", label: "Product matchups", href: "/dashboard/information" },
+    { id: "overview", label: "Workspace overview", href: "/dashboard/information?tab=overview" },
   ];
-
   return (
     <div className="mt-6 flex flex-wrap gap-2">
       {tabs.map((tab) => (
